@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ===== 프로젝트 전용 =====
+# 입력 데이터 (gitkeep만 유지)
+data/raw/*
+!data/raw/.gitkeep
+
+# Docker 볼륨 (etcd/minio/milvus 데이터)
+docker/volumes/*
+!docker/volumes/.gitkeep

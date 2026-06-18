@@ -1,0 +1,111 @@
+name: smart-fill-agents
+
+services:
+  # ===== 우리 앱 =====
+  be:
+    container_name: be
+    build: ./be
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      milvus:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  fe:
+    container_name: fe
+    build: ./fe
+    env_file: .env
+    environment:
+      - BACKEND_URL=http://be:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - be
+    restart: unless-stopped
+
+  # ===== 대화 영속화 (LangGraph checkpointer) =====
+  postgres:
+    container_name: postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-agents}
+    volumes:
+      - ./docker/volumes/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ===== Milvus 스택 (milvus + etcd + minio) =====
+  etcd:
+    container_name: etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ./docker/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    container_name: minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - ./docker/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Milvus GUI (DBeaver 같은 관리 툴). 필수 아님 — 보고 싶을 때만 띄워도 됨.
+  attu:
+    container_name: attu
+    image: zilliz/attu:v2.4
+    environment:
+      MILVUS_URL: milvus:19530   # 같은 compose 네트워크라 서비스명으로 연결
+    ports:
+      - "8100:3000"              # 호스트 8100 -> 컨테이너 3000 (be의 8000과 분리)
+    depends_on:
+      - milvus
+    restart: unless-stopped
+
+  milvus:
+    container_name: milvus
+    image: milvusdb/milvus:v2.4.4
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ./docker/volumes/milvus:/var/lib/milvus
+    ports:
+      - "19530:19530"   # gRPC
+      - "9091:9091"     # metrics/health
+    depends_on:
+      - etcd
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3

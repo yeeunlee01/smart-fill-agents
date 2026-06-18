@@ -1,0 +1,24 @@
+# ===== Web =====
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# ===== LangGraph / LLM =====
+langgraph
+langchain
+langchain-openai
+langgraph-checkpoint-postgres
+openai
+
+# ===== VectorDB =====
+pymilvus
+
+# ===== 문서 파싱 (PPT/HTML 등) =====
+python-pptx
+beautifulsoup4
+lxml
+
+# ===== 기타 =====
+psycopg[binary]
+httpx
