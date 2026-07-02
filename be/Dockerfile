@@ -6,6 +6,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# docx → PDF 변환용 LibreOffice(Writer) + 한글 폰트(나눔)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libreoffice-writer fonts-nanum \
+    && rm -rf /var/lib/apt/lists/*
+
 # 의존성 먼저 (레이어 캐시 활용)
 COPY requirements.txt .
 RUN pip install -r requirements.txt

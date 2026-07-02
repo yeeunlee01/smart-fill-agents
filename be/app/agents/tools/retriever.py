@@ -5,6 +5,6 @@ from app.rag.retriever import search
 
 
 @tool
-def retrieve(query: str, top_k: int = 5) -> list[str]:
-    """주어진 query로 Milvus에서 관련 문서 청크를 검색한다."""
-    return search(query, top_k=top_k)
+def retrieve(query: str, top_k: int = 5, documents: list[str] | None = None) -> list[dict]:
+    """주어진 query로 Milvus에서 관련 문서 청크를 검색한다 (근거 포함)."""
+    return search(query, top_k=top_k, documents=documents)

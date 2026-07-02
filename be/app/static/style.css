@@ -1,0 +1,516 @@
+/* ===== 디자인 토큰 ===== */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --border: #e3e6ea;
+  --text: #1d2129;
+  --muted: #6b7280;
+  --primary: #4f46e5;
+  --primary-weak: #eef2ff;
+  --user-bubble: #4f46e5;
+  --assist-bubble: #ffffff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 16px rgba(0, 0, 0, .04);
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+/* hidden 속성은 항상 숨김 (.tpl-editor의 display:flex 등이 덮어쓰지 못하게) */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-size: 15px;
+}
+
+body { height: 100vh; }
+
+/* ===== 전체 레이아웃: 좌측 메뉴바 + 우측 콘텐츠 ===== */
+.layout { display: flex; height: 100vh; }
+.content { flex: 1; min-width: 0; display: flex; }
+
+/* ===== 좌측 메뉴바 ===== */
+.sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brand { font-weight: 700; font-size: 16px; padding: 8px 10px 14px; }
+.nav-item {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14.5px;
+  color: var(--muted);
+}
+.nav-item:hover { background: var(--bg); }
+.nav-item.is-active { background: var(--primary-weak); color: var(--primary); font-weight: 600; }
+/* 네비게이션이 아닌 동작 버튼(대화 재시작) — 테두리 있는 네모 버튼 */
+.nav-action {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+  margin-top: 8px;
+}
+.nav-action:hover { background: var(--bg); border-color: var(--primary); color: var(--primary); }
+
+/* ===== 뷰 전환 ===== */
+.view { flex: 1; min-width: 0; min-height: 0; display: none; }
+.view.is-active { display: flex; }
+
+/* ===== 버튼 공통 ===== */
+.btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background .12s, border-color .12s;
+}
+.btn:hover { background: var(--bg); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn-primary:hover { background: #4338ca; }
+.btn-ghost { background: transparent; }
+
+/* ===== 채팅 레이아웃 ===== */
+#view-chat { display: none; }
+#view-chat.is-active { display: flex; }
+
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.tool-btn:hover { background: var(--bg); border-color: var(--primary); }
+.tool-sep-dot { color: var(--border); }
+.tool-label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+#template-select {
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  font-size: 13px;
+  max-width: 220px;
+}
+.hint { font-size: 12.5px; color: var(--muted); }
+
+.attach-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+.chip.is-error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.chip .x { cursor: pointer; color: var(--muted); font-weight: 700; }
+.chip .spin { width: 11px; height: 11px; border: 2px solid var(--border);
+  border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; }
+
+/* 메시지 영역 */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.msg { max-width: 760px; display: flex; flex-direction: column; gap: 4px; }
+.msg.user { align-self: flex-end; align-items: flex-end; }
+.msg.assistant { align-self: flex-start; }
+.bubble {
+  padding: 11px 15px;
+  border-radius: var(--radius);
+  line-height: 1.6;
+  box-shadow: var(--shadow);
+  word-break: break-word;
+  white-space: normal;
+}
+.msg.user .bubble {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-right-radius: 5px;
+}
+/* LLM 응답: 말풍선 없이 배경 위에 그대로 */
+.msg.assistant .bubble {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 2px 2px;
+}
+.bubble.streaming::after {
+  content: "▋";
+  animation: blink 1s steps(2) infinite;
+  color: var(--muted);
+}
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* intent 배지 */
+.intent-badge { display: flex; align-items: center; gap: 7px; font-size: 10px; flex-wrap: wrap; }
+.intent-badge .pill { color: var(--muted); }
+.intent-badge .pill.on { color: var(--text); font-weight: 700; }
+.intent-badge .pill-sep { color: var(--border); }
+
+/* 마크다운 본문 */
+.bubble p { margin: 0 0 8px; }
+.bubble p:last-child { margin-bottom: 0; }
+.bubble ul { margin: 6px 0; padding-left: 20px; }
+.bubble code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.bubble hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.bubble h1, .bubble h2, .bubble h3, .bubble h4 { margin: 8px 0 6px; font-size: 15px; }
+
+/* 답변 아래 '근거' — 접이식 토글, 제목은 회색 */
+.bubble .sources { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 8px; }
+.bubble .sources > summary {
+  cursor: pointer; color: var(--muted); font-size: 13px;
+  list-style: none; user-select: none;
+  display: flex; align-items: center; gap: 8px;
+}
+.bubble .sources > summary::-webkit-details-marker { display: none; }
+/* 삼각형을 CSS로 직접 그림(대칭 도형) → 세로 중앙 정확히 맞음. 열리면 90° 회전으로 ▾ */
+.bubble .sources > summary::before {
+  content: ""; display: inline-block;
+  width: 0; height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid currentColor;   /* ▸ (색은 summary 회색 상속) */
+  transition: transform .15s ease;
+}
+.bubble .sources[open] > summary::before { transform: rotate(90deg); }
+.bubble .sources-body { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.bubble .sources-body ul { margin: 4px 0; }
+
+/* 구조화된 근거 항목 (썸네일 + 메타, 클릭 시 원문 하이라이트 확대) */
+.source-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 6px; border-radius: 8px;
+}
+.source-item.clickable { cursor: pointer; }
+.source-item.clickable:hover { background: var(--bg); }
+/* 썸네일 — 그 페이지를 축소 렌더 + 형광펜 (토글 펼 때 바로 보임) */
+.source-item .src-thumb {
+  flex: 0 0 auto; width: 132px; min-height: 56px;
+  background: #f0f0f3; border: 1px solid var(--border); border-radius: 6px;
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+}
+.source-item .src-thumb-ph { font-size: 11px; color: var(--muted); padding: 20px 4px; text-align: center; }
+.source-item .src-thumb .pdf-hl-page { box-shadow: none; }
+/* 메타 — 3줄: 문서 / 페이지 / 연관도 */
+.source-item .src-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-top: 2px; }
+.source-item .src-doc { font-weight: 600; color: var(--text); word-break: break-all; }
+.source-item .src-loc { color: var(--muted); }
+.source-item .src-score { color: var(--muted); }
+
+/* 근거 원문 PDF 모달 */
+.pdf-modal { position: fixed; inset: 0; z-index: 1000; display: flex; }
+.pdf-modal[hidden] { display: none; }
+.pdf-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.pdf-modal-panel {
+  position: relative; margin: auto; z-index: 1;
+  width: min(900px, 92vw); height: min(88vh, 900px);
+  background: #fff; border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.pdf-modal-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+}
+.pdf-modal-title { font-size: 13px; color: var(--muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-modal-close { margin-left: auto; border: none; background: none; font-size: 18px; cursor: pointer; color: var(--muted); padding: 2px 6px; }
+.pdf-modal-close:hover { color: var(--text); }
+.pdf-modal-body { flex: 1; overflow: auto; padding: 12px; background: #f0f0f3; display: flex; justify-content: center; }
+.pdf-modal-msg { margin: auto; color: var(--muted); font-size: 14px; }
+
+/* 모달: 문서 전체 페이지를 세로로 쌓기 (스크롤) */
+.pdf-hl-doc { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+
+/* PDF 페이지 + 형광펜 오버레이 */
+.pdf-hl-page { position: relative; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.18); }
+.pdf-hl-overlay { position: absolute; inset: 0; pointer-events: none; }
+.pdf-hl-mark { position: absolute; background: rgba(255, 221, 0, .42); border-radius: 2px; }
+
+/* 입력 영역 */
+.composer-wrap {
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+
+/* ===== 첫 화면(welcome): 입력창을 가운데로 ===== */
+.welcome-title { display: none; text-align: center; margin-bottom: 20px; }
+.welcome-title h1 { font-size: 25px; margin: 0 0 8px; }
+.welcome-title p { color: var(--muted); margin: 0; font-size: 14.5px; }
+
+/* 첫 화면: 3가지 활용 시나리오 카드 */
+.welcome-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+  gap: 12px;
+  margin: 22px 0 4px;
+  text-align: left;
+}
+.wcard {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--panel);
+}
+.wc-icon { font-size: 21px; margin-bottom: 9px; }
+.wc-title { font-weight: 700; font-size: 14.5px; margin-bottom: 6px; }
+.wc-desc { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.wc-desc b { color: var(--text); font-weight: 600; }
+
+.chat-main.welcome #messages { display: none; }
+.chat-main.welcome .composer-wrap {
+  margin: auto;               /* 세로·가로 가운데 */
+  width: min(720px, 100%);
+  border-top: none;
+  background: transparent;
+}
+.chat-main.welcome .welcome-title { display: block; }
+.composer-chips { margin-bottom: 8px; }
+.composer-chips:empty { display: none; }   /* 첨부 없으면 공간 차지 안 함 */
+.composer { display: flex; gap: 10px; }
+.composer-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+  padding: 0 2px;
+}
+#prompt {
+  flex: 1;
+  resize: none;
+  max-height: 160px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+#prompt:focus { outline: 2px solid var(--primary-weak); border-color: var(--primary); }
+
+/* ===== 템플릿 관리 ===== */
+#view-templates { display: none; flex-direction: column; overflow-y: auto; padding: 22px; }
+#view-templates.is-active { display: flex; }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(276px, 1fr)); gap: 18px; }
+.tpl-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 320px;
+  box-shadow: var(--shadow);
+}
+.tpl-card h3 { margin: 0; font-size: 16px; }
+.tpl-card .slots {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 192px;
+  font-size: 13px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+.tpl-card .card-actions { display: flex; gap: 6px; }
+.tpl-card .card-actions .btn { flex: 1; padding: 7px; font-size: 13px; }
+.tpl-card.add {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-style: dashed;
+  cursor: pointer;
+}
+.tpl-card.add:hover { border-color: var(--primary); background: var(--primary-weak); }
+
+/* 에디터 */
+.tpl-editor {
+  max-width: 720px;
+  width: 100%;
+  align-self: center;   /* 사이드바 제외 영역 가로 가운데 정렬 */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tpl-editor-topbar { display: flex; justify-content: flex-end; }
+.tpl-file-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+/* 업로드 문서 미리보기 (서식 그대로, 스크롤) */
+.tpl-viewer {
+  height: 420px;             /* 빈 상태/로딩 기본 높이 (docx는 로딩 후 문서 높이에 맞춰 조정) */
+  overflow: auto;            /* 내용이 넘치면 박스 안에서만 스크롤 */
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f0f0f3;        /* 문서 바깥 회색 배경 */
+  color: var(--text);
+  font-size: 13px;
+}
+/* docx → PDF 미리보기: 페이지(canvas)를 가로로 나란히, ~2.5장 보이고 나머지는 가로 스크롤 */
+.pdf-pages { display: flex; flex-flow: row nowrap; align-items: flex-start; gap: 16px; padding: 16px; }
+.pdf-page { flex: 0 0 auto; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.18); }
+
+/* (폴백) docx-preview: 페이지를 가로로 나란히, A4 비율 축소 */
+.tpl-viewer .docx-wrapper {
+  display: flex !important;
+  flex-flow: row nowrap !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  gap: 20px;
+  padding: 16px !important;
+  background: #f0f0f3 !important;
+  zoom: 0.36;                /* A4 한 장이 박스 높이에 맞고, 가로로 ~2.5장 보이도록 */
+}
+.tpl-viewer .docx-wrapper > section.docx {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}
+/* 빈 상태: 흰 바탕 중앙 안내 */
+.viewer-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 100%;          /* 고정된 보기창을 가득 채워 버튼/문구를 중앙에 */
+  box-sizing: border-box;
+  background: #fff;          /* 문서 첨부 전 빈 상태 — 흰색 */
+  color: var(--muted);
+  font-size: 14px;
+}
+.tpl-viewer.plain { white-space: pre-wrap; word-break: break-word; padding: 12px 14px; background: var(--bg); line-height: 1.6; }
+.tpl-viewer .doc-html { padding: 14px 16px; background: #fff; line-height: 1.6; }
+.tpl-viewer .doc-html table { border-collapse: collapse; }
+.tpl-viewer .doc-html td, .tpl-viewer .doc-html th { border: 1px solid var(--border); padding: 4px 8px; }
+
+/* 항목 카드 번호 (1. 2. 3. …) — 제목 윗 행 */
+.slot-card .slot-num { font-weight: 700; color: var(--muted); font-size: 13px; }
+.field-label { font-size: 13px; font-weight: 600; color: var(--muted); margin-top: 6px; }
+.tpl-editor input[type="text"], .tpl-editor textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+}
+.editor-actions { margin-top: 14px; }
+
+/* 감지된 슬롯(묶음) 카드 */
+/* 감지된 항목 '창' — 항상 있는 스크롤 프레임. 내용물(예시↔실제 항목)만 교체됨 */
+.slot-cards {
+  display: flex; flex-direction: column; gap: 10px;
+  margin: 10px 0; padding: 12px;
+  min-height: 220px; max-height: 600px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: #f0f0f3; scrollbar-gutter: stable;   /* 미리보기 창과 동일 회색 (항상) */
+}
+.slots-count { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 6px; }
+.slots-empty { margin: auto; padding: 24px 14px; text-align: center; color: var(--muted); font-size: 14px; }
+
+/* 빈 상태 예시 카드 ("이렇게 표시돼요") */
+.slots-example-note { font-size: 13px; color: var(--muted); margin: 2px 0 10px; }
+.slot-card.is-example { border-style: dashed; background: #fff; }
+.slot-card.is-example .ex-name { font-weight: 600; font-size: 14px; }
+.slot-card.is-example .ex-def { font-size: 13px; color: var(--muted); }
+.slot-card.is-example .ex-badge {
+  margin-left: auto; font-size: 11px; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px;
+}
+.slot-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.slot-card-head { display: flex; align-items: center; gap: 8px; }
+.slot-card input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; width: 100%; }
+.slot-card .sname { font-weight: 600; }
+.slot-card .del { cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
+.slot-fields { display: flex; flex-wrap: wrap; gap: 6px; }
+.field-chip { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
+
+/* 감지 항목 — 묶인 원문 요소를 문서 양식 그대로 접었다 펴기 */
+.slot-card .seg-preview { border-top: 1px dashed var(--border); padding-top: 8px; }
+.slot-card .seg-preview > summary {
+  cursor: pointer; font-size: 14px; color: var(--muted);
+  list-style: none; user-select: none;
+  display: flex; align-items: center; gap: 5px;
+}
+.slot-card .seg-preview > summary::-webkit-details-marker { display: none; }
+.slot-card .seg-preview > summary::before { content: "▸"; font-size: 19px; line-height: 1; }
+.slot-card .seg-preview[open] > summary::before { content: "▾"; }
+.seg-loading { font-size: 12px; color: var(--muted); padding: 8px 2px; }
+
+/* 고충실: docx-preview 클론을 카드 폭에 맞춰 축소해 담는 상자 */
+.seg-doc, .seg-recon {
+  margin-top: 8px; max-height: 60vh; overflow: auto;   /* 아주 긴 요소만 스크롤, 평소엔 내용 높이에 맞춤 */
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+}
+.seg-doc .docx-wrapper { zoom: .7; padding: 0; background: transparent; }
+/* docx 페이지의 A4 고정 높이 제거 → 요소 높이에 맞추고, 위아래 padding 만 buffer 로 */
+.seg-doc .docx-wrapper > section.docx {
+  min-height: 0 !important; height: auto !important;
+  padding-top: 20px !important; padding-bottom: 20px !important;
+  box-shadow: none; margin: 0 auto;
+}
+
+/* 폴백: structure 로 재구성한 문서 양식 */
+.seg-recon { padding: 10px 12px; line-height: 1.55; font-size: 13px; }
+.seg-recon h4 { margin: 8px 0 2px; font-size: 14px; }
+.seg-recon p { margin: 4px 0; }
+.seg-recon table { border-collapse: collapse; width: 100%; margin: 4px 0; }
+.seg-recon td, .seg-recon th { border: 1px solid var(--border); padding: 3px 6px; font-size: 12px; vertical-align: top; }
+.seg-recon .empty-cell { color: var(--muted); }
+.sf-blank { background: #fde68a; border-radius: 3px; padding: 0 3px; color: #7c5b00; }

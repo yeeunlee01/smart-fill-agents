@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartFill Agents</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <!-- ===== 좌측 메뉴바 ===== -->
+    <nav class="sidebar">
+      <div class="brand">📝 SmartFill Agents</div>
+      <button class="nav-item is-active" data-view="chat">💬 채팅</button>
+      <button class="nav-item" data-view="templates">📋 템플릿 목록</button>
+      <button class="nav-item" data-view="templates" data-action="new">➕ 새 템플릿 등록</button>
+      <button id="reset-btn" class="nav-action">🧹 대화 재시작</button>
+    </nav>
+
+    <!-- ===== 우측 콘텐츠 ===== -->
+    <div class="content">
+      <!-- 채팅 화면 -->
+      <main id="view-chat" class="view is-active">
+        <!-- welcome = 첫 화면(입력창 가운데). 첫 메시지를 보내면 클래스가 제거되며 하단으로 -->
+        <section class="chat-main welcome">
+          <!-- 메시지 영역 -->
+          <div id="messages" class="messages"></div>
+
+          <!-- 입력 영역 (첫 화면 문구 + 첨부 칩 + 입력 + 액션 한 줄) -->
+          <div class="composer-wrap">
+            <div class="welcome-title">
+              <h1>무엇을 도와드릴까요?</h1>
+              <p>이렇게 3가지로 활용할 수 있어요</p>
+              <div class="welcome-cards">
+                <div class="wcard">
+                  <div class="wc-icon">💬</div>
+                  <div class="wc-title">일반 채팅</div>
+                  <div class="wc-desc">서비스 사용법을 묻거나<br>가볍게 대화해요</div>
+                </div>
+                <div class="wcard">
+                  <div class="wc-icon">📎</div>
+                  <div class="wc-title">문서 질의응답</div>
+                  <div class="wc-desc"><b>문서를 첨부</b>하고<br>내용을 질문하면 근거와 함께 답해요</div>
+                </div>
+                <div class="wcard">
+                  <div class="wc-icon">📎&nbsp;📄</div>
+                  <div class="wc-title">템플릿 채우기</div>
+                  <div class="wc-desc"><b>문서 첨부 + 템플릿 선택</b> 후<br>“채워줘”라고 요청해요</div>
+                </div>
+              </div>
+            </div>
+
+            <input id="file-input" type="file" multiple
+                   accept=".pptx,.html,.pdf,.txt,.docx" hidden />
+
+            <!-- 첨부된 문서 칩 (있을 때만 표시) -->
+            <div id="attach-list" class="attach-list composer-chips"></div>
+
+            <form id="composer" class="composer">
+              <textarea id="prompt" rows="1"
+                        placeholder="템플릿을 채우거나, 문서에 대해 질문하세요"></textarea>
+              <button id="send-btn" type="submit" class="btn btn-primary">보내기</button>
+            </form>
+
+            <!-- 입력창 아래 액션 한 줄 -->
+            <div class="composer-actions">
+              <button id="attach-btn" class="tool-btn">📎 문서 첨부</button>
+              <select id="template-select"></select>
+              <span id="no-template-hint" class="hint" hidden>‘템플릿 관리’에서 먼저 만들어주세요.</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- 템플릿 관리 화면 -->
+      <main id="view-templates" class="view">
+        <!-- 라이브러리 -->
+        <section id="tpl-library" class="tpl-library">
+          <div class="tpl-grid" id="tpl-grid"></div>
+        </section>
+
+        <!-- 에디터 -->
+        <section id="tpl-editor" class="tpl-editor" hidden>
+          <div class="tpl-editor-topbar">
+            <button id="tpl-back" class="btn btn-ghost">← 목록으로</button>
+          </div>
+          <h2 id="tpl-editor-title">새 템플릿</h2>
+
+          <label class="field-label">템플릿 이름</label>
+          <input id="tpl-name" type="text" placeholder="예: 사업계획서" />
+
+          <label class="field-label">템플릿 문서 첨부</label>
+          <input id="tpl-file" type="file" accept=".docx,.md,.txt" hidden />
+          <div id="tpl-viewer" class="tpl-viewer"></div>
+          <div class="tpl-file-row">
+            <span id="tpl-file-status" class="hint"></span>
+          </div>
+
+          <div id="tpl-slots-step">
+            <h3>감지된 항목 (확인 / 수정) <span id="tpl-slots-count" class="slots-count"></span></h3>
+            <p class="hint" id="tpl-slots-hint" hidden>자동 감지된 묶음이에요. 이름·설명을 다듬거나, 필요 없는 묶음은 삭제하세요.</p>
+            <div id="tpl-slots" class="slot-cards"></div>
+            <div class="editor-actions" id="tpl-save-row" hidden>
+              <button id="tpl-save" class="btn btn-primary">💾 저장</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- 근거 원문 PDF 모달 (채팅에서 출처 클릭 시) -->
+  <div id="pdf-modal" class="pdf-modal" hidden>
+    <div class="pdf-modal-backdrop" data-close></div>
+    <div class="pdf-modal-panel">
+      <div class="pdf-modal-head">
+        <span id="pdf-modal-title" class="pdf-modal-title"></span>
+        <button class="pdf-modal-close" data-close title="닫기">✕</button>
+      </div>
+      <div id="pdf-modal-body" class="pdf-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- docx 미리보기 (로컬 vendor): pdf.js(주) + docx-preview(폴백) -->
+  <script src="/vendor/pdf.min.js"></script>
+  <script src="/vendor/jszip.min.js"></script>
+  <script src="/vendor/docx-preview.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

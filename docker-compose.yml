@@ -2,10 +2,17 @@ name: smart-fill-agents
 
 services:
   # ===== 우리 앱 =====
+  # be가 API(/api/v1/*)와 프론트엔드(바닐라 HTML/JS, be/app/static)를 함께 서빙한다.
+  # → UI 접속 주소: http://localhost:8000
   be:
     container_name: be
     build: ./be
     env_file: .env
+    # 개발 편의: 소스 마운트 + 자동 리로드 (코드/정적파일 수정 시 새로고침으로 반영)
+    volumes:
+      - ./be:/app
+      - ./data:/data   # 디버그용: 변환된 PDF 저장 위치
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "8000:8000"
     depends_on:
@@ -13,18 +20,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    restart: unless-stopped
-
-  fe:
-    container_name: fe
-    build: ./fe
-    env_file: .env
-    environment:
-      - BACKEND_URL=http://be:8000
-    ports:
-      - "8501:8501"
-    depends_on:
-      - be
     restart: unless-stopped
 
   # ===== 대화 영속화 (LangGraph checkpointer) =====
@@ -91,6 +86,7 @@ services:
   milvus:
     container_name: milvus
     image: milvusdb/milvus:v2.4.4
+    platform: linux/amd64   # 이 태그는 amd64만 제공 → arm 맥에서 에뮬레이션 (플랫폼 명시로 경고 제거)
     command: ["milvus", "run", "standalone"]
     environment:
       ETCD_ENDPOINTS: etcd:2379

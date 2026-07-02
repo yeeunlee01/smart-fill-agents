@@ -11,16 +11,16 @@
 | 에이전트 | LangGraph (멀티에이전트 + supervisor router) |
 | LLM | GPT (OpenAI) |
 | Backend | FastAPI |
-| Frontend | Streamlit |
+| Frontend | 바닐라 HTML/CSS/JS (be가 정적 서빙) |
 | VectorDB | Milvus |
 
 ## 구조
 
 ```
-be/        FastAPI + LangGraph (에이전트 핵심)
-fe/        Streamlit UI
-docker/    인프라 설정/볼륨
-scripts/   문서 적재 등 운영 스크립트
+be/             FastAPI + LangGraph (에이전트 핵심)
+be/app/static/  프론트엔드 (바닐라 HTML/CSS/JS) — be가 함께 서빙
+docker/         인프라 설정/볼륨
+scripts/        문서 적재 등 운영 스크립트
 ```
 
 ## 실행
@@ -30,9 +30,9 @@ cp .env.example .env      # 값 채우기 (OPENAI_API_KEY 등)
 make up                   # 전체 스택 기동 (compose)
 ```
 
-- Frontend: http://localhost:8501
+- UI: http://localhost:8000
 - Backend docs: http://localhost:8000/docs
 
 ## 컨테이너 구성 (compose)
 
-be, fe, milvus, etcd, minio, postgres
+be, milvus, etcd, minio, postgres
