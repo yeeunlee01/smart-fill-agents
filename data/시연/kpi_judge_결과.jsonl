@@ -1,0 +1,26 @@
+{"id": "Q1", "faithful": true, "relevant": true, "reason": "답변이 제시된 근거 인용문과 일치하며, 질문에 정확히 답하고 있다."}
+{"id": "Q2", "faithful": true, "relevant": true, "reason": "답변이 제시된 근거 인용문과 일치하며, 질문에 정확히 답하고 있다."}
+{"id": "Q3", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 기반하여 사업 기간을 정확히 설명하고 있다."}
+{"id": "Q4", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 내용을 충실히 반영하고 있으며, 질문에 정확히 답하고 있다."}
+{"id": "Q5", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 대금 지급 조건을 정확히 반영하고 있으며, 질문에 대한 적절한 정보를 제공하고 있다."}
+{"id": "Q6", "faithful": true, "relevant": false, "reason": "답변은 근거가 없음을 정직하게 인정했으나, 질문에 대한 정보를 제공하지 못했다."}
+{"id": "Q7", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 제안서 분량 제한 정보를 정확히 전달하고 있다."}
+{"id": "Q8", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 시스템 성능 요구사항을 정확히 반영하고 있다."}
+{"id": "Q9", "faithful": true, "relevant": false, "reason": "답변은 근거가 없음을 정직하게 인정했으므로 충실도는 true이지만, 질문에 대한 정보를 제공하지 못했으므로 관련성은 false입니다."}
+{"id": "Q10", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 따라 '기술 및 수행 방법론'이 25점으로 가장 높은 배점을 받는 항목임을 정확히 설명하고 있다."}
+{"id": "Q11", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 발주처 '(주)한신물류'와 일치하며, 질문에 적절히 답하고 있다."}
+{"id": "Q12", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 사업 금액을 정확히 전달하고 있으며, 질문에 직접적으로 답하고 있다."}
+{"id": "Q13", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 수행 기간과 발주처 정보를 정확히 반영하고 있다."}
+{"id": "Q14", "faithful": false, "relevant": true, "reason": "답변은 특정 실적이 가장 유사하다고 강조되었다고 주장하지만, 근거에서는 세 실적 모두가 본 사업의 요구사항과 부합한다고만 언급되어 있다. 따라서 특정 실적이 강조되었다는 주장은 근거에 없다."}
+{"id": "Q15", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 정보를 정확히 반영하고 있으며, 질문에 대한 적절한 답변을 제공하고 있다."}
+{"id": "Q16", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 있는 정보를 정확히 반영하고 있으며, 질문에 대한 직접적인 답변을 제공하고 있다."}
+{"id": "Q17", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 충실하며, 질문에 대한 정보를 정확하게 제공하고 있다."}
+{"id": "Q18", "faithful": true, "relevant": true, "reason": "답변이 제시된 근거 인용문에 명시된 정보를 정확히 반영하고 있다."}
+{"id": "Q19", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 정보를 정확히 반영하고 있으며, 질문에 대한 적절한 답변을 제공합니다."}
+{"id": "Q20", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 임직원 수 68명을 정확히 반영하고 있다."}
+{"id": "Q21", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 내용을 정확히 반영하고 있으며, 질문에 대한 적절한 정보를 제공합니다."}
+{"id": "Q22", "faithful": true, "relevant": true, "reason": "답변의 모든 정보가 제시된 근거 인용문에 의해 뒷받침되며, 질문에 적절한 정보를 제공하고 있다."}
+{"id": "Q23", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 기반하여 RFP가 요구하는 유사 수행실적에 해당하는 실적을 정확히 제시하고 있다."}
+{"id": "Q24", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 기반하여 RFP의 온·습도 실시간 모니터링 요구를 수행할 수 있는 이유를 잘 설명하고 있다."}
+{"id": "Q25", "faithful": true, "relevant": true, "reason": "답변은 제시된 근거 인용문에 명시된 100% 투입 인력 4명과 일치하며, 질문에 정확히 답하고 있다."}
+{"total": 25, "faithful": 24, "relevant": 23, "faithfulness": 0.96, "relevance": 0.92}

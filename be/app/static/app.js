@@ -1029,7 +1029,9 @@ function renderLibrary() {
     const card = document.createElement("div");
     card.className = "tpl-card";
     const slotsHtml = t.slots.length
-      ? t.slots.map((s) => `• <strong>${escapeHtml(s.name)}</strong> — ${escapeHtml(s.definition || "")}`).join("<br>")
+      ? t.slots.map((s, i) =>
+          `<div class="slot-item"><strong>${i + 1}. ${escapeHtml(s.name)}</strong><br>: ${escapeHtml(s.definition || "")}</div>`
+        ).join("")
       : "<em>(slot 없음)</em>";
     card.innerHTML = `
       <h3>📄 ${escapeHtml(t.name)}</h3>
@@ -1335,9 +1337,11 @@ function attachSegPreview(card, seg) {
 }
 
 // 감지된 항목 영역에 안내 문구만 표시 (분석 중 / 비어 있음). 카드·저장은 숨김.
-function showSlotsPlaceholder(msg) {
+// loading=true면 회전 스피너를 함께 표시해 '진행 중'임을 보여준다.
+function showSlotsPlaceholder(msg, loading = false) {
   const box = $("#tpl-slots");
-  box.innerHTML = `<div class="slots-empty">${escapeHtml(msg)}</div>`;
+  const spinner = loading ? '<div class="loading-spinner"></div>' : "";
+  box.innerHTML = `<div class="slots-empty">${spinner}${escapeHtml(msg)}</div>`;
   $("#tpl-slots-count").textContent = "";
   $("#tpl-slots-hint").hidden = true;
   $("#tpl-save-row").hidden = true;
@@ -1456,10 +1460,10 @@ $("#tpl-file").addEventListener("change", async (e) => {
   // 미리보기 창 한가운데에 '분석 중…' 표시 (높이는 기본값으로)
   const viewer = $("#tpl-viewer");
   viewer.style.height = "";
-  viewer.innerHTML = '<div class="viewer-empty">‘' + escapeHtml(f.name) + '’ 분석 중…</div>';
+  viewer.innerHTML = '<div class="viewer-empty"><div class="loading-spinner"></div>‘' + escapeHtml(f.name) + '’ 분석 중…</div>';
   // 감지된 항목 영역에도 진행 안내 (미리보기가 먼저 떠도 분할이 끝나기 전까지 표시)
   $("#tpl-slots-step").hidden = false;
-  showSlotsPlaceholder(`🔍 ‘${f.name}’을(를) 분석 중입니다…`);
+  showSlotsPlaceholder(`‘${f.name}’을(를) 분석 중입니다…`, true);
   try {
     const b64 = await fileToBase64(f);
     currentFile = { name: f.name, b64, kind };

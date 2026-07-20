@@ -419,6 +419,8 @@ body { height: 100vh; }
   border-radius: 8px;
   padding: 8px;
 }
+.tpl-card .slots .slot-item { margin-bottom: 10px; }
+.tpl-card .slots .slot-item:last-child { margin-bottom: 0; }
 .tpl-card .card-actions { display: flex; gap: 6px; }
 .tpl-card .card-actions .btn { flex: 1; padding: 7px; font-size: 13px; }
 .tpl-card.add {
@@ -512,6 +514,17 @@ body { height: 100vh; }
 }
 .slots-count { font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 6px; }
 .slots-empty { margin: auto; padding: 24px 14px; text-align: center; color: var(--muted); font-size: 14px; }
+.slots-empty .loading-spinner { margin: 0 auto 10px; }
+
+/* 분석 중 로딩 스피너 (감지된 항목 영역·문서 미리보기 공용) */
+.loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
 
 /* 빈 상태 예시 카드 ("이렇게 표시돼요") */
 .slots-example-note { font-size: 13px; color: var(--muted); margin: 2px 0 10px; }
