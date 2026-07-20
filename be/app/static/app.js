@@ -23,11 +23,13 @@ function escapeHtml(s) {
   );
 }
 
-// 아주 가벼운 마크다운 → HTML (굵게/코드/제목/구분선/불릿/문단)
+// 아주 가벼운 마크다운 → HTML (굵게/코드/제목/구분선/불릿/문단/표)
+// 빈 줄 = 문단 구분(마크다운과 동일). 연속 비어있지 않은 줄은 한 문단으로 이음.
 function miniMarkdown(src) {
   const lines = escapeHtml(src).split("\n");
   let html = "";
   let inList = false;
+  let paraBuf = [];
   const inline = (t) =>
     t
       .replace(/`([^`]+)`/g, "<code>$1</code>")
@@ -36,21 +38,52 @@ function miniMarkdown(src) {
   const closeList = () => {
     if (inList) { html += "</ul>"; inList = false; }
   };
+  const flushPara = () => {
+    if (!paraBuf.length) return;
+    closeList();
+    html += `<p>${inline(paraBuf.join(" "))}</p>`;
+    paraBuf = [];
+  };
+  const isSep = (s) => s.includes("|") && /-/.test(s) && /^[\s:|-]+$/.test(s); // 표 구분행
+  const cells = (s) => s.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
 
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line === "") { closeList(); continue; }
-    if (/^---+$/.test(line)) { closeList(); html += "<hr>"; continue; }
-    const h = line.match(/^(#{1,4})\s+(.*)$/);
-    if (h) { closeList(); html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; continue; }
-    if (/^[-*]\s+/.test(line)) {
-      if (!inList) { html += "<ul>"; inList = true; }
-      html += `<li>${inline(line.replace(/^[-*]\s+/, ""))}</li>`;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    // 표: 헤더행 + |---|---| 구분행 + 본문행들
+    if (line.includes("|") && i + 1 < lines.length && isSep(lines[i + 1].trim())) {
+      flushPara();
+      closeList();
+      const head = cells(line);
+      let t = "<table><thead><tr>" + head.map((c) => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>";
+      i += 2;
+      for (; i < lines.length && lines[i].trim().includes("|"); i++) {
+        const row = cells(lines[i].trim());
+        t += "<tr>" + row.map((c) => `<td>${inline(c)}</td>`).join("") + "</tr>";
+      }
+      i--; // for 루프가 ++ 하므로 되돌림
+      html += t + "</tbody></table>";
       continue;
     }
-    closeList();
-    html += `<p>${inline(line)}</p>`;
+    if (line === "") { flushPara(); closeList(); continue; } // 빈 줄 → 문단 경계
+    if (/^---+$/.test(line)) { flushPara(); closeList(); html += "<hr>"; continue; }
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) {
+      flushPara();
+      closeList();
+      html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`;
+      continue;
+    }
+    // 템플릿/LLM이 쓰는 • · 1. 등도 목록으로 (이전이면 줄마다 <p>라서 떨어져 보였음)
+    const li = line.match(/^([-*•·○●◦▪▸►]|\d+[.)]|[①-⑳])\s+(.*)$/);
+    if (li) {
+      flushPara();
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${inline(li[2])}</li>`;
+      continue;
+    }
+    paraBuf.push(line);
   }
+  flushPara();
   closeList();
   return html;
 }
@@ -73,9 +106,15 @@ function renderReply(text) {
   return html;
 }
 
-// 최종 답변 렌더. 구조화된 sources가 있으면 '클릭 가능한' 근거 토글로(원문 하이라이트),
-// 없으면(일반채팅/템플릿채우기 등) 기존 마크다운 토글로 폴백.
-function renderFinal(bubble, text, sources) {
+// 최종 답변 렌더.
+//  - TemplateFill(filled 있음) → 항목별 카드
+//  - 구조화 sources 있음 → 클릭 가능한 근거 토글
+//  - 그 외 → 마크다운 폴백
+function renderFinal(bubble, text, sources, filled, tpl) {
+  if (filled && filled.length) {
+    renderFillResult(bubble, filled, tpl);
+    return;
+  }
   if (!sources || !sources.length) {
     bubble.innerHTML = renderReply(text);
     return;
@@ -84,6 +123,462 @@ function renderFinal(bubble, text, sources) {
   const answer = m ? text.slice(0, m.index) : text; // 본문에 붙은 마크다운 근거는 떼고
   bubble.innerHTML = miniMarkdown(answer);
   bubble.appendChild(buildSourcesToggle(sources)); // 구조화 근거로 새로 그림
+}
+
+let lastFilled = null; // 최근 채우기 결과(편집 반영본) — 나중 다운로드/미리보기가 이어받음
+
+function _normLabel(s) {
+  return (s || "").replace(/\s+/g, "").trim();
+}
+
+// 표에서 라벨→값 쌍 추출 (백엔드 extract_kv_pairs와 동일). {label, r, labelC, valueC, fill_mode, hint}
+function extractKvPairsFromTable(tbl) {
+  if (!tbl || !tbl.cols || !tbl.rows) return [];
+  const cell = (r, c) => tbl.cells[r * tbl.cols + c] || {};
+  const pairs = [];
+  for (let r = 0; r < tbl.rows; r++) {
+    for (let c = 0; c < tbl.cols; ) {
+      const cur = cell(r, c);
+      if (cur.merged_skip) { c++; continue; }
+      const label = ((cur.text) || "").replace(/\s+/g, " ").trim();
+      if (!cur.fillable && label) {
+        let nc = c + 1;
+        while (nc < tbl.cols && cell(r, nc).merged_skip) nc++;
+        const val = cell(r, nc);
+        if (nc < tbl.cols && val.fillable && !val.merged_skip) {
+          pairs.push({
+            label,
+            r,
+            labelC: c,
+            valueC: nc,
+            fill_mode: val.fill_mode || "replace",
+            hint: ((val.text) || "").replace(/\s+/g, " ").trim(),
+          });
+          c = nc + 1;
+          continue;
+        }
+      }
+      c++;
+    }
+  }
+  return pairs;
+}
+
+function slotTable(tpl, slot) {
+  const byId = new Map((tpl.structure && tpl.structure.elements || []).map((e) => [e.id, e]));
+  const els = (slot.element_ids || []).map((i) => byId.get(i)).filter(Boolean);
+  return els.find((e) => e.kind === "table") || null;
+}
+
+// 수동 채움 on 시 붙일 최소 region (detect 결과가 비어 있을 때)
+function defaultFillRegion(slot, tpl) {
+  const probe = tpl || { structure: currentStructure };
+  const hasTable = !!slotTable(probe, slot);
+  return {
+    label: ((slot.name || "").trim()) || (hasTable ? "표" : "값"),
+    kind: hasTable ? "table_records" : "value",
+    repeatable: false,
+    fixed: [],
+    guide: (slot.definition || "").trim(),
+  };
+}
+
+// 템플릿 편집기에서 slot 채움 on/off. regions·needs_fill을 맞춰 저장한다.
+function setSlotFillEnabled(slot, enabled, tpl) {
+  slot.fill_manual = true;
+  slot.needs_fill = !!enabled;
+  if (enabled) {
+    if (!Array.isArray(slot.regions) || slot.regions.length === 0) {
+      slot.regions = [defaultFillRegion(slot, tpl)];
+    }
+  } else {
+    slot.regions = [];
+  }
+}
+
+// slot을 LLM으로 채울지.
+// - fill_manual: 편집기 토글로 수동 지정한 needs_fill 우선
+// - regions: []  → 스킵 / regions: […] → 채움
+// - regions 없음 → structure의 실질 fillable로 판정
+function slotNeedsFill(tpl, slot) {
+  if (slot && slot.fill_manual && typeof slot.needs_fill === "boolean") {
+    return slot.needs_fill;
+  }
+  if (Array.isArray(slot.regions) && slot.regions.length === 0) return false;
+  if (Array.isArray(slot.regions) && slot.regions.length > 0) return true;
+
+  if (!tpl || !tpl.structure) return true;
+  const byId = new Map((tpl.structure.elements || []).map((e) => [e.id, e]));
+  const els = (slot.element_ids || []).map((i) => byId.get(i)).filter(Boolean);
+  for (const el of els) {
+    if (el.kind === "table") {
+      if ((el.cells || []).some((c) => c.fillable && !c.merged_skip)) return true;
+    } else if (el.fillable) {
+      // 여백용 빈 문단만으로는 채움 대상으로 보지 않음. 불릿 틀·라벨: 은 채움.
+      if (el.fill_mode === "list_item" || el.fill_mode === "append") return true;
+      const t = (el.text || "").trim();
+      if (t) return true;
+    }
+  }
+  return false;
+}
+
+// LLM이 낸 | 항목 | 값 | 마크다운 → {정규화라벨: 값}
+function parseKvValues(content) {
+  const map = {};
+  for (const raw of (content || "").split("\n")) {
+    const line = raw.trim();
+    if (!line.includes("|")) continue;
+    if (/^[\s:|-]+$/.test(line) && line.includes("-")) continue; // 구분행
+    const cells = line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+    if (cells.length < 2 || !cells[1]) continue;
+    const key = _normLabel(cells[0]);
+    if (!key || key === "항목" || key === "값") continue;
+    map[key] = cells[1];
+  }
+  return map;
+}
+
+// 양식(kv) 표를 원본 격자(한 행에 쌍 2개·병합 colspan)대로 HTML로 재구성
+function renderKvFormHtml(tbl, content) {
+  const pairs = extractKvPairsFromTable(tbl);
+  const values = parseKvValues(content);
+  const labelAt = new Map(pairs.map((p) => [`${p.r},${p.labelC}`, p]));
+  const valueAt = new Map(pairs.map((p) => [`${p.r},${p.valueC}`, p]));
+
+  let html = '<table class="kv-form"><tbody>';
+  for (let r = 0; r < tbl.rows; r++) {
+    html += "<tr>";
+    for (let c = 0; c < tbl.cols; ) {
+      const cur = tbl.cells[r * tbl.cols + c] || {};
+      if (cur.merged_skip) { c++; continue; }
+      let span = 1;
+      while (c + span < tbl.cols && (tbl.cells[r * tbl.cols + c + span] || {}).merged_skip) span++;
+      const key = `${r},${c}`;
+      let text = "";
+      let cls = "";
+      if (labelAt.has(key)) {
+        text = labelAt.get(key).label;
+        cls = "kv-label";
+      } else if (valueAt.has(key)) {
+        const p = valueAt.get(key);
+        const val = values[_normLabel(p.label)] || "";
+        if (p.fill_mode === "prefix" && p.hint) {
+          text = val ? `${val} ${p.hint}` : p.hint;
+        } else {
+          text = val;
+        }
+        cls = "kv-value";
+      } else {
+        text = ((cur.text) || "").replace(/\s+/g, " ").trim();
+      }
+      const spanAttr = span > 1 ? ` colspan="${span}"` : "";
+      const clsAttr = cls ? ` class="${cls}"` : "";
+      html += `<td${spanAttr}${clsAttr}>${escapeHtml(text)}</td>`;
+      c += span;
+    }
+    html += "</tr>";
+  }
+  html += "</tbody></table>";
+  // 표에 없는 여분 항목이 있으면 아래에 보충 (LLM이 추가 필드를 낸 경우)
+  const used = new Set(pairs.map((p) => _normLabel(p.label)));
+  const extras = Object.entries(values).filter(([k]) => !used.has(k));
+  if (extras.length) {
+    html += '<table class="kv-form kv-extra"><tbody>';
+    for (const [k, v] of extras) {
+      html += `<tr><td class="kv-label">${escapeHtml(k)}</td><td class="kv-value">${escapeHtml(v)}</td></tr>`;
+    }
+    html += "</tbody></table>";
+  }
+  return html;
+}
+
+// 채우기 카드 표시용: kv 양식이면 원본 표 형태로, 아니면 마크다운
+function formatFillDisplay(f, idx, tpl) {
+  const slot = tpl && (tpl.slots || [])[idx];
+  if (!slot || !tpl || !tpl.structure) return miniMarkdown(f.content || "");
+  const layout = slotLayout(tpl, slot);
+  if (layout.orientation !== "kv") return miniMarkdown(f.content || "");
+  const tbl = slotTable(tpl, slot);
+  if (!tbl || extractKvPairsFromTable(tbl).length < 2) return miniMarkdown(f.content || "");
+  return renderKvFormHtml(tbl, f.content || "");
+}
+
+// slot의 문서상 형식(구조 힌트): 표 방향(행/열/kv) + 고정 필드명. → 백엔드 slot_filler의 구조 인식 생성용.
+function slotLayout(tpl, slot) {
+  const byId = new Map((tpl.structure && tpl.structure.elements || []).map((e) => [e.id, e]));
+  const els = (slot.element_ids || []).map((i) => byId.get(i)).filter(Boolean);
+  const tbl = els.find((e) => e.kind === "table");
+  // Word 네모 작성란 = 논리 셀 1개인 표 → 표 출력이 아니라 줄글(box)
+  if (tbl && tbl.rows === 1 && tbl.cols >= 1) {
+    let logical = 0;
+    let guide = "";
+    for (let c = 0; c < tbl.cols; c++) {
+      const cell = tbl.cells[c] || {};
+      if (cell.merged_skip) continue;
+      logical++;
+      if (!guide) guide = ((cell.text) || "").replace(/\s+/g, " ").trim();
+    }
+    if (logical === 1) {
+      return {
+        type: "box",
+        orientation: "",
+        fields: [],
+        blanks: guide ? [guide] : ["문단 작성란"],
+        repeatable: false,
+      };
+    }
+  }
+  if (!tbl || !tbl.cols || !tbl.rows) {
+    // 불릿/번호 목록 틀 → 표의 예시 행처럼 항목 수를 늘릴 수 있음
+    const listEls = els.filter((e) => e.kind !== "table" && e.fill_mode === "list_item");
+    const listRec = (slot.regions || []).find((r) => r && r.kind === "text_list");
+    if (listEls.length || listRec) {
+      const marker = (listEls[0] && listEls[0].label)
+        || ((listRec && listRec.fixed && listRec.fixed[0]) || "•");
+      return {
+        type: "list",
+        orientation: "",
+        fields: [marker],
+        blanks: [],
+        repeatable: listRec ? !!listRec.repeatable : true,
+      };
+    }
+    // 텍스트 slot: 채울 빈칸(placeholder 텍스트)들 → slot_filler가 그 분량·용도에 맞게 간결히 생성
+    const blanks = els
+      .filter((e) => e.kind !== "table" && e.fillable)
+      .map((e) => (e.text || "").replace(/\s+/g, " ").trim())
+      .filter((t) => t);
+    return { type: "text", orientation: "", fields: [], blanks, repeatable: false };
+  }
+
+  // detect_regions가 붙인 방향·필드·repeatable이 있으면 우선 (등록 시 판단)
+  const rec = (slot.regions || []).find((r) => r && r.kind === "table_records" && r.orientation);
+  if (rec) {
+    return {
+      type: "table",
+      orientation: rec.orientation,
+      fields: (rec.fixed || []).filter(Boolean),
+      repeatable: !!rec.repeatable,
+    };
+  }
+
+  const cell = (r, c) => tbl.cells[r * tbl.cols + c] || {};
+  const fillable = (r, c) => !!(cell(r, c).fillable && !cell(r, c).merged_skip);
+  const text = (r, c) => ((cell(r, c).text) || "").replace(/\s+/g, " ").trim();
+
+  const pairs = extractKvPairsFromTable(tbl);
+  let fillN = 0;
+  for (let r = 0; r < tbl.rows; r++) for (let c = 0; c < tbl.cols; c++) if (fillable(r, c)) fillN++;
+  if (pairs.length >= 2 && fillN > 0 && pairs.length >= fillN * 0.8) {
+    return { type: "table", orientation: "kv", fields: pairs.map((p) => p.label), repeatable: false };
+  }
+
+  // 방향 감지: 빈칸이 '한 행에 여러 열' vs '한 열에 여러 행' (백엔드 orientation과 동일)
+  // repeatable은 regions에 없을 때만 false 기본(등록 시 detect_regions가 넣는 값을 씀)
+  let rowFill = 0, colFill = 0;
+  for (let r = 0; r < tbl.rows; r++) { let n = 0; for (let c = 0; c < tbl.cols; c++) if (fillable(r, c)) n++; rowFill = Math.max(rowFill, n); }
+  for (let c = 0; c < tbl.cols; c++) { let n = 0; for (let r = 0; r < tbl.rows; r++) if (fillable(r, c)) n++; colFill = Math.max(colFill, n); }
+  const orientation = rowFill >= colFill ? "row" : "col";
+  const fields = [];
+  if (orientation === "row") {
+    for (let c = 0; c < tbl.cols; c++) if (!cell(0, c).merged_skip) fields.push(text(0, c));
+  } else {
+    for (let r = 0; r < tbl.rows; r++) fields.push(text(r, 0));
+  }
+  return { type: "table", orientation, fields: fields.filter(Boolean), repeatable: false };
+}
+
+// 채우기 결과 렌더. docx 템플릿이면 3열(원본 | 채운 문서 | 항목별) 나란히, 아니면 카드만.
+function renderFillResult(bubble, filled, tpl) {
+  const canDoc = tpl && tpl.kind === "docx" && tpl.file_b64 && tpl.structure;
+  if (!canDoc) { renderFillCards(bubble, filled, tpl); return; }
+
+  bubble.innerHTML = "";
+  const bar = document.createElement("div");
+  bar.className = "fill-doc-bar";
+  bar.innerHTML =
+    `<span class="fill-doc-title">📄 채우기 결과</span>` +
+    `<button class="fill-doc-download" disabled>📥 다운로드</button>`;
+  const split = document.createElement("div");
+  split.className = "fill-doc-split";
+  split.innerHTML =
+    `<div class="fill-doc-pane"><div class="fill-doc-pane-label">원본 템플릿</div>` +
+      `<div class="fill-doc-pane-body" data-pane="orig"><div class="pdf-modal-msg">불러오는 중…</div></div></div>` +
+    `<div class="fill-doc-pane"><div class="fill-doc-pane-label">항목별 보기</div>` +
+      `<div class="fill-doc-pane-body" data-pane="cards"></div></div>`;
+  bubble.appendChild(bar);
+  bubble.appendChild(split);
+
+  const dlBtn = $(".fill-doc-download", bar);
+  const origBody = $('[data-pane="orig"]', split);
+  const cardsBody = $('[data-pane="cards"]', split);
+  let filledDocx = null; // 채워진 docx bytes (다운로드용)
+
+  // 항목별 보기 카드 (즉시) — kv 양식은 원본 표 형태로 표시
+  renderFillCards(cardsBody, filled, tpl);
+  // 원본 템플릿 (병렬)
+  (async () => {
+    try {
+      const pdf = await _docxToPdf(base64ToBlob(tpl.file_b64, DOCX_MIME));
+      origBody.innerHTML = ""; await _renderAllPages(origBody, pdf, 0, []);
+    } catch (e) { origBody.innerHTML = `<div class="pdf-modal-msg">원본 로드 실패</div>`; }
+  })();
+  // 채워진 docx 생성 — 미리보기 열은 없애고 다운로드용 bytes만 준비
+  (async () => {
+    try {
+      const built = await buildFilledDocx(tpl, filled);
+      filledDocx = built.docxBytes; dlBtn.disabled = false;
+    } catch (e) { /* 생성 실패 → 다운로드 비활성 유지 */ }
+  })();
+
+  dlBtn.addEventListener("click", () => {
+    if (!filledDocx) return;
+    const url = URL.createObjectURL(new Blob([filledDocx], { type: DOCX_MIME }));
+    const a = document.createElement("a");
+    a.href = url; a.download = (tpl.name || "채워진문서") + ".docx";
+    a.click(); URL.revokeObjectURL(url);
+  });
+}
+
+// docx Blob → 백엔드 /pdf 변환 → pdf.js 문서
+async function _docxToPdf(blob) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.js";
+  const fd = new FormData();
+  fd.append("file", blob, "doc.docx");
+  const res = await fetch("/api/v1/templates/pdf", { method: "POST", body: fd });
+  if (!res.ok) throw new Error(`PDF ${res.status}`);
+  return pdfjsLib.getDocument({ data: new Uint8Array(await res.arrayBuffer()) }).promise;
+}
+
+// 템플릿 docx + 채운 내용 → /fill 로 주입된 docx → PDF (다운로드용 bytes + 미리보기 pdf)
+async function buildFilledDocx(tpl, filled) {
+  // filled.idx ↔ tpl.slots[idx] 매핑 (스킵된 slot이 끼어도 안 꼬임)
+  const slots = tpl.slots || [];
+  const injections = filled.map((f, i) => {
+    if (isFillSkipped(f, tpl) || isFillNotFound(f) || !(f.content || "").trim()) return null;
+    const s = slots[f.idx != null ? f.idx : i];
+    if (!s) return null;
+    const inj = { element_ids: s.element_ids || [], content: f.content || "" };
+    // 표/목록: 등록 시 regions.repeatable (detect_regions) 따름
+    const rec = (s.regions || []).find((r) => r.kind === "table_records" || r.kind === "text_list");
+    if (rec) inj.repeatable = !!rec.repeatable;
+    else if (s.layout && s.layout.type === "list") inj.repeatable = s.layout.repeatable !== false;
+    return inj;
+  }).filter((inj) => inj && inj.element_ids.length);
+
+  const fd = new FormData();
+  fd.append("file", base64ToBlob(tpl.file_b64, DOCX_MIME), tpl.file_name || "template.docx");
+  fd.append("injections", JSON.stringify(injections));
+  const res = await fetch("/api/v1/templates/fill", { method: "POST", body: fd });
+  if (!res.ok) throw new Error(`주입 ${res.status}`);
+  const docxBytes = new Uint8Array(await res.arrayBuffer());
+  const pdf = await _docxToPdf(new Blob([docxBytes], { type: DOCX_MIME }));
+  return { docxBytes, pdf };
+}
+
+// 채울 필요 없는 slot(regions:[], needs_fill=false, skipped) — 오류가 아님
+function isFillSkipped(f, tpl) {
+  if (f && f.skipped) return true;
+  if (!f || !tpl) return false;
+  const s = (tpl.slots || [])[f.idx != null ? f.idx : -1];
+  if (!s) return false;
+  return !slotNeedsFill(tpl, s);
+}
+
+// 진짜 검색/생성 실패만 경고. 빈 내용·스킵은 여기 포함하지 않음.
+function isFillNotFound(f) {
+  return /찾지 못했|찾을 수 없/.test((f && f.content) || "");
+}
+
+// 채우기 결과를 항목별 카드로. 내용은 마크다운 렌더(표/목록), '편집'으로 원문 수정, 항목별 근거, 못 채운 항목 강조.
+// kv 양식 표는 LLM의 | 항목 | 값 | 을 원본 격자(한 행 두 쌍 등)로 재구성해 보여준다. 편집은 원문 유지.
+// 스킵 slot도 목록에 포함하되, 경고 없이 "(채움 생략)"만 표시.
+function renderFillCards(bubble, filled, tpl) {
+  const items = [...(filled || [])].sort((a, b) => (a.idx ?? 0) - (b.idx ?? 0));
+  lastFilled = filled;
+  bubble.innerHTML = "";
+  items.forEach((f, i) => {
+    const slotIdx = f.idx != null ? f.idx : i;
+    const skipped = isFillSkipped(f, tpl);
+    const notFound = !skipped && isFillNotFound(f);
+    const card = document.createElement("div");
+    card.className = "fill-card" + (notFound ? " not-found" : "") + (skipped ? " fill-skipped" : "");
+
+    const head = document.createElement("div");
+    head.className = "fill-head";
+    head.innerHTML = `<span class="fill-title">${notFound ? "⚠️ " : ""}${i + 1}. ${escapeHtml(f.name || "")}</span>`;
+    card.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "fill-body doc-html";
+    card.appendChild(body);
+
+    const showView = () => {
+      if (skipped) {
+        body.innerHTML = "<p>(채움 생략)</p>";
+      } else if (notFound) {
+        // 표 재구성 하지 말고 실패 문구 그대로 표시
+        body.innerHTML = miniMarkdown(f.content || "(관련 내용을 문서에서 찾지 못했습니다)");
+      } else {
+        body.innerHTML = formatFillDisplay(f, slotIdx, tpl);
+      }
+    };
+    // 스킵·못찾음은 편집 불필요 (스킵은 원문 고정, 못찾음은 내용 없음)
+    if (!notFound && !skipped) {
+      const editBtn = document.createElement("button");
+      editBtn.className = "fill-edit";
+      editBtn.textContent = "✏️ 편집";
+      let editing = false;
+      editBtn.addEventListener("click", () => {
+        editing = !editing;
+        if (editing) {
+          const ta = document.createElement("textarea");
+          ta.className = "fill-edit-area";
+          ta.value = f.content || "";
+          body.innerHTML = "";
+          body.appendChild(ta);
+          ta.style.height = Math.min(ta.scrollHeight + 4, 400) + "px";
+          ta.focus();
+          editBtn.textContent = "✓ 완료";
+        } else {
+          const ta = $(".fill-edit-area", body);
+          if (ta) f.content = ta.value; // 편집값 보관
+          showView();
+          editBtn.textContent = "✏️ 편집";
+        }
+      });
+      head.appendChild(editBtn);
+    }
+    showView();
+
+    if (!skipped && f.sources && f.sources.length) card.appendChild(buildSourcesToggle(f.sources));
+    bubble.appendChild(card);
+  });
+
+  // 전체 복사
+  const bar = document.createElement("div");
+  bar.className = "fill-actions";
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "fill-copy";
+  copyBtn.textContent = "📋 전체 복사";
+  copyBtn.addEventListener("click", () => {
+    const text = items.map((f) => {
+      const body = isFillSkipped(f, tpl) ? "(채움 생략)" : (f.content || "");
+      return `${f.name}\n${body}`;
+    }).join("\n\n");
+    navigator.clipboard.writeText(text).then(() => {
+      copyBtn.textContent = "✓ 복사됨";
+      setTimeout(() => { copyBtn.textContent = "📋 전체 복사"; }, 1500);
+    });
+  });
+  bar.appendChild(copyBtn);
+  bubble.appendChild(bar);
+}
+
+// 주입 스킵용: 비었거나 못 찾음 메시지. (UI 경고는 isFillNotFound 사용 — 빈 스킵과 구분)
+function _isEmptyFill(content) {
+  return !content || /찾지 못했|찾을 수 없/.test(content);
 }
 
 // 원본 바이트를 들고 있어 하이라이트가 가능한 출처인지 (PDF · docx)
@@ -178,6 +673,7 @@ function closePdfModal() {
   if (!modal) return;
   modal.hidden = true;
   body.innerHTML = "";
+  _evCtx = null;
 }
 function _pageNum(location) {
   const m = (location || "").match(/(\d+)/);
@@ -221,9 +717,11 @@ async function loadEvidencePdf(rec, docName) {
 }
 
 // 근거를 렌더할 페이지 결정 후, 문서 '전체'를 세로로 렌더하고 근거 페이지로 스크롤.
+let _evCtx = null; // 현재 근거 창 렌더 컨텍스트 (창 크기 조절 시 다시 렌더용)
 async function renderEvidence(container, pdf, page, texts) {
   let focus = page ? Math.min(Math.max(page, 1), pdf.numPages) : null;
   if (focus === null) focus = (await _findPageWithText(pdf, texts)) || 1;
+  _evCtx = { container, pdf, focus, texts, w: container.clientWidth || 0 };
   await _renderAllPages(container, pdf, focus, texts);
 }
 
@@ -328,19 +826,57 @@ function _highlightRects(textContent, viewport, texts) {
   });
   const rects = [];
   const seen = new Set();
-  (texts || []).forEach((raw) => {
-    const needle = _sigChars(raw);
-    if (needle.length < 2) return;
-    let idx = compact.indexOf(needle);
-    if (idx < 0 && needle.length > 24) idx = compact.indexOf(needle.slice(0, 24)); // 앞부분만이라도
-    if (idx < 0) return;
-    const end = idx + Math.min(needle.length, compact.length - idx);
-    for (let i = idx; i < end; i++) {
-      const ii = owner[i];
+  const mark = (from, to) => {
+    // 매칭 구간이 걸친 '첫 item ~ 끝 item' 사이의 모든 item을 칠한다.
+    // (③·구두점처럼 SIG 문자가 없어 owner에 안 잡히는 중간 item도 포함 → 문장 중간 특수기호도 하이라이트)
+    const a = owner[from], b = owner[to - 1];
+    for (let ii = a; ii <= b; ii++) {
       if (!seen.has(ii)) { seen.add(ii); rects.push(_itemRect(items[ii], viewport)); }
     }
+  };
+  (texts || []).forEach((raw) => {
+    const needle = _sigChars(raw);
+    if (needle.length < 4) return;
+    // 1) 문장 전체가 연속으로 맞으면 그대로 (PDF처럼 추출이 거의 같을 때)
+    const whole = compact.indexOf(needle);
+    if (whole >= 0) { mark(whole, whole + needle.length); return; }
+    // 2) 전체가 안 맞으면(추출 엔진 차이로 일부 어긋남) 겹치는 창으로 쪼개 '맞는 부분'만 하이라이트
+    const W = 14, STEP = 7;
+    let any = false;
+    for (let p = 0; p + W <= needle.length; p += STEP) {
+      const si = compact.indexOf(needle.slice(p, p + W));
+      if (si >= 0) { mark(si, si + W); any = true; }
+    }
+    // 3) 창도 안 맞고 짧은 문장이면 앞부분만이라도
+    if (!any && needle.length >= 8) {
+      const si = compact.indexOf(needle.slice(0, 8));
+      if (si >= 0) mark(si, si + 8);
+    }
   });
-  return rects;
+  return _mergeRects(rects); // 같은 줄 인접 조각을 하나로 병합 → 띄어쓰기까지 매끈하게
+}
+
+// 매칭된 박스들을 '같은 줄'끼리 하나의 연속 사각형으로 병합.
+// 같은 줄이면 간격과 무관하게 처음~끝을 한 바로 이어붙여, 문장 중간의 기호(③)·구두점·공백에
+// 텍스트 item이 없거나 순서가 어긋나도 빈틈 없이 칠해지게 한다.
+function _mergeRects(rects) {
+  const sorted = rects.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x));
+  const out = [];
+  let cur = null;
+  for (const r of sorted) {
+    const sameLine = cur && Math.abs(r.y - cur.y) <= cur.h * 0.6;
+    if (cur && sameLine) {
+      const right = Math.max(cur.x + cur.w, r.x + r.w);
+      cur.x = Math.min(cur.x, r.x);
+      cur.w = right - cur.x;
+      cur.y = Math.min(cur.y, r.y);
+      cur.h = Math.max(cur.h, r.h);
+    } else {
+      cur = { ...r };
+      out.push(cur);
+    }
+  }
+  return out;
 }
 
 async function _renderPageWithHighlights(container, pdf, pageNum, texts, opts = {}) {
@@ -727,10 +1263,14 @@ function reconstructSegmentHtml(ids) {
       for (let r = 0; r < el.rows; r++) {
         t += "<tr>";
         el.cells.slice(r * el.cols, (r + 1) * el.cols).forEach((c) => {
+          if (c.merged_skip) return; // 가로 병합 중복 슬롯은 미리보기에서 숨김
           const txt = (c.text || "").trim();
-          t += txt
-            ? `<td>${escapeHtml(txt)}</td>`
-            : `<td class="empty-cell"><span class="sf-blank">빈칸</span></td>`;
+          if (c.fillable) {
+            const hint = txt ? `${escapeHtml(txt)} ` : "";
+            t += `<td class="empty-cell">${hint}<span class="sf-blank">빈칸</span></td>`;
+          } else {
+            t += `<td>${escapeHtml(txt)}</td>`;
+          }
         });
         t += "</tr>";
       }
@@ -740,11 +1280,32 @@ function reconstructSegmentHtml(ids) {
     if (el.fillable && el.fill_mode === "append") {
       return `<p><strong>${escapeHtml(el.label)}:</strong> <span class="sf-blank">채울 값</span></p>`;
     }
+    if (el.fillable && el.fill_mode === "list_item") {
+      const marker = escapeHtml(el.label || "•");
+      return `<p>${marker} <span class="sf-blank">목록 항목</span></p>`;
+    }
     const txt = (el.text || "").trim();
     return txt ? `<p>${escapeHtml(txt)}</p>` : `<p><span class="sf-blank">빈칸</span></p>`;
   }).join("");
 }
 
+// slot-card에 '분해' 토글을 붙인다 — 코드레벨 확인용으로 slot state를 raw JSON 그대로 덤프.
+function attachRegions(card, seg) {
+  if (!seg || seg.regions === undefined) return;  // 감지 정보 없는 slot(구버전)은 생략
+  // 실제 state로 전달되는 값 그대로 (감지 결과 = currentSlots[i]).
+  const state = {
+    name: seg.name,
+    definition: seg.definition,
+    element_ids: seg.element_ids,
+    regions: seg.regions,
+  };
+  const det = document.createElement("details");
+  det.className = "seg-regions";
+  det.innerHTML = `<summary>분해 state (JSON) · 영역 ${(seg.regions || []).length}개</summary>`
+    + `<pre class="seg-regions-json"></pre>`;
+  $(".seg-regions-json", det).textContent = JSON.stringify(state, null, 2);
+  card.appendChild(det);
+}
 // slot-card 하나에 '원문 보기' 토글을 붙인다 (펼 때 지연 렌더)
 function attachSegPreview(card, seg) {
   const ids = seg.element_ids || [];
@@ -821,7 +1382,7 @@ function renderSlotsExample() {
   });
 }
 
-// 구간(묶음) 카드 — 번호 + 이름/설명 수정 + 삭제 + '원문 보기' 토글.
+// 구간(묶음) 카드 — 번호 + 이름/설명 수정 + 채움 on/off + 삭제 + '원문 보기' 토글.
 function renderSlots() {
   if (!currentSlots.length) {
     renderSlotsExample();  // 빈 상태 → 예시 카드로 "이렇게 표시돼요" 안내
@@ -831,13 +1392,19 @@ function renderSlots() {
   $("#tpl-save-row").hidden = false;
   const box = $("#tpl-slots");
   box.innerHTML = "";
+  const tplProbe = { structure: currentStructure };
+  let nFill = 0;
   currentSlots.forEach((s, i) => {
+    const needs = slotNeedsFill(tplProbe, s);
+    if (needs) nFill++;
     const card = document.createElement("div");
-    card.className = "slot-card";
+    card.className = "slot-card" + (needs ? "" : " slot-skip");
     card.innerHTML = `
       <div class="slot-num">${i + 1}.</div>
       <div class="slot-card-head">
         <input class="sname" placeholder="묶음 이름" />
+        <button type="button" class="slot-fill-toggle ${needs ? "is-on" : "is-off"}"
+          title="클릭하여 채움 대상/생략을 바꿉니다">${needs ? "채움 대상" : "채움 생략"}</button>
         <span class="del" title="이 묶음 삭제">🗑️</span>
       </div>
       <input class="sdef" placeholder="채울 내용 설명 (가이드)" />`;
@@ -845,14 +1412,24 @@ function renderSlots() {
     $(".sdef", card).value = s.definition || "";
     $(".sname", card).addEventListener("input", (e) => { currentSlots[i].name = e.target.value; });
     $(".sdef", card).addEventListener("input", (e) => { currentSlots[i].definition = e.target.value; });
+    $(".slot-fill-toggle", card).addEventListener("click", () => {
+      setSlotFillEnabled(currentSlots[i], !slotNeedsFill(tplProbe, currentSlots[i]), tplProbe);
+      renderSlots();
+    });
     $(".del", card).addEventListener("click", () => { currentSlots.splice(i, 1); renderSlots(); });
     attachSegPreview(card, s);  // '원문 보기' 토글 (묶인 원문을 문서 양식으로)
+    attachRegions(card, s);     // '분해' 토글 (LLM 판단: 채울 영역 fixed/fill)
     box.appendChild(card);
   });
 
   // 총 개수 표시
   const countEl = $("#tpl-slots-count");
-  if (countEl) countEl.textContent = currentSlots.length ? `총 ${currentSlots.length}개` : "";
+  if (countEl) {
+    const nSkip = currentSlots.length - nFill;
+    countEl.textContent = currentSlots.length
+      ? `총 ${currentSlots.length}개 (채움 ${nFill}${nSkip ? ` · 생략 ${nSkip}` : ""})`
+      : "";
+  }
 }
 
 function fileToBase64(file) {
@@ -1139,7 +1716,17 @@ composer.addEventListener("submit", async (e) => {
     message: text,
     thread_id: threadId,
     documents: okDocNames(),
-    template: tpl ? { name: tpl.name, slots: tpl.slots } : null,
+    template: tpl ? {
+      name: tpl.name,
+      slots: tpl.slots.map((s) => ({
+        name: s.name,
+        definition: s.definition || "",
+        layout: slotLayout(tpl, s),
+        needs_fill: slotNeedsFill(tpl, s),
+        // 백엔드 이중 가드용 (regions:[] 이면 LLM 스킵)
+        regions: Array.isArray(s.regions) ? s.regions : undefined,
+      })),
+    } : null,
   };
 
   sendBtn.disabled = true;
@@ -1186,7 +1773,7 @@ composer.addEventListener("submit", async (e) => {
           threadId = ev.thread_id || threadId;
           if (ev.intent) renderBadge(container, ev.intent);
           bubble.classList.remove("streaming");
-          renderFinal(bubble, ev.reply || acc || "", ev.sources || []); // 답변 + 근거 토글(클릭 시 원문 하이라이트)
+          renderFinal(bubble, ev.reply || acc || "", ev.sources || [], ev.filled || [], tpl); // 답변/근거 or 채우기(문서/카드)
           finalized = true;
           scrollDown();
         } else if (ev.type === "error") {
@@ -1196,7 +1783,7 @@ composer.addEventListener("submit", async (e) => {
     }
     if (!finalized) { // done 없이 끊긴 경우 — 모은 토큰으로 마무리
       bubble.classList.remove("streaming");
-      renderFinal(bubble, acc || "_(빈 응답)_", []);
+      renderFinal(bubble, acc || "_(빈 응답)_", [], [], tpl);
     }
   } catch (err) {
     bubble.classList.remove("streaming");
@@ -1221,13 +1808,55 @@ $("#reset-btn").addEventListener("click", async () => {
   renderAttachments();
 });
 
-/* ===== 근거 PDF 모달 닫기 (X · 배경 클릭 · Esc) ===== */
+/* ===== 근거 PDF 모달 닫기 (X · Esc) ===== */
 $("#pdf-modal").addEventListener("click", (e) => {
   if (e.target.hasAttribute("data-close")) closePdfModal();
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("#pdf-modal").hidden) closePdfModal();
 });
+
+/* ===== 근거 창 드래그 이동 (헤더 잡고) ===== */
+(function () {
+  const panel = $(".pdf-modal-panel");
+  const head = $(".pdf-modal-head");
+  if (!panel || !head) return;
+  let drag = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  head.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".pdf-modal-close")) return; // 닫기 버튼은 제외
+    const r = panel.getBoundingClientRect();
+    ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY;
+    panel.style.left = ox + "px"; panel.style.top = oy + "px"; panel.style.transform = "none";
+    drag = true;
+    document.body.style.userSelect = "none";
+    e.preventDefault();
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!drag) return;
+    // 창이 화면 밖으로 완전히 사라지지 않게 가장자리 클램프
+    const nx = Math.max(-panel.offsetWidth + 100, Math.min(ox + e.clientX - sx, window.innerWidth - 100));
+    const ny = Math.max(0, Math.min(oy + e.clientY - sy, window.innerHeight - 44));
+    panel.style.left = nx + "px"; panel.style.top = ny + "px";
+  });
+  window.addEventListener("mouseup", () => { drag = false; document.body.style.userSelect = ""; });
+})();
+
+/* ===== 근거 창 크기 조절 시 PDF를 새 폭에 맞춰 다시 렌더 ===== */
+(function () {
+  const body = $("#pdf-modal-body");
+  if (!body || !window.ResizeObserver) return;
+  let timer = null;
+  new ResizeObserver(() => {
+    if ($("#pdf-modal").hidden || !_evCtx) return;
+    const w = body.clientWidth;
+    if (Math.abs(w - _evCtx.w) < 12) return; // 미세 변화·같은 폭이면 무시
+    _evCtx.w = w;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (_evCtx) renderEvidence(_evCtx.container, _evCtx.pdf, _evCtx.focus, _evCtx.texts);
+    }, 180);
+  }).observe(body);
+})();
 
 /* ===== 초기화 ===== */
 refreshTemplateSelect();

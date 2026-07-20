@@ -8,7 +8,9 @@
 구조 파싱은 app.templates.parsers 가 포맷별로 처리한다 (지금은 docx만).
 분할(segment)·빈칸 감지는 포맷 무관 공통 로직.
 """
-from fastapi import APIRouter, File, HTTPException, UploadFile
+import json
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -16,9 +18,12 @@ from pydantic import BaseModel, Field
 from app.agents.prompts.templates import SPLIT_SYSTEM_PROMPT
 from app.llm.client import get_llm
 from app.rag.parse import parse_file
+from app.templates.inject import fill_docx
 from app.templates.parsers import parse_template
-from app.templates.segment import segment_structure
+from app.templates.segment import detect_regions, segment_structure
 from app.templates.topdf import docx_to_pdf
+
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 router = APIRouter()
 
@@ -85,6 +90,7 @@ async def detect_template(file: UploadFile = File(...)) -> dict:
     except ValueError as e:  # 미지원 형식
         raise HTTPException(status_code=400, detail=str(e))
     segments = await segment_structure(structure)
+    segments = await detect_regions(structure, segments)  # 채울 영역(fixed/fill) 분해 부착
     return {"structure": structure, "segments": segments}
 
 
@@ -107,3 +113,24 @@ async def template_pdf(file: UploadFile = File(...)) -> Response:
     except Exception:  # noqa: BLE001 — 저장 실패해도 응답은 정상 진행
         pass
     return Response(content=pdf, media_type="application/pdf")
+
+
+@router.post("/fill")
+async def fill_template(file: UploadFile = File(...), injections: str = Form("[]")) -> Response:
+    """템플릿 docx + 채운 내용(injections) → anchor 위치에 in-place 주입된 docx 반환.
+
+    injections: [{"element_ids": [int], "content": str}]  (프론트가 slot↔내용 매핑해 전달)
+    반환된 docx는 프론트에서 /pdf로 미리보기 + 다운로드에 쓴다.
+    """
+    if _ext(file.filename) != "docx":
+        raise HTTPException(status_code=400, detail="채우기 렌더는 .docx 템플릿만 지원합니다.")
+    data = await file.read()
+    try:
+        injs = json.loads(injections)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"injections JSON 파싱 실패: {e}")
+    try:
+        filled = await run_in_threadpool(fill_docx, data, injs)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"주입 실패: {e}")
+    return Response(content=filled, media_type=_DOCX_MIME)

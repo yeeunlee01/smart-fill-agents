@@ -6,9 +6,12 @@ LLM은 '요소 id를 묶기만' 하고 텍스트는 생성하지 않는다. → 
 """
 from pydantic import BaseModel, Field
 
-from app.agents.prompts.templates import SEGMENT_SYSTEM_PROMPT
+from app.agents.prompts.templates import DETECT_SYSTEM_PROMPT, SEGMENT_SYSTEM_PROMPT
 from app.llm.client import get_llm
 from app.templates.structure import render_outline
+from app.templates.table_layout import is_text_box_table
+from app.templates.table_layout import orientation as table_orientation
+from app.templates.table_layout import table_fields
 
 
 class _Segment(BaseModel):
@@ -89,4 +92,150 @@ async def segment_structure(structure: dict) -> list[dict]:
     for seg in segments:
         seg["element_ids"].sort()
     segments.sort(key=lambda s: min(s["element_ids"]))
+    return segments
+
+
+# ── 채울 영역 분해 (요소 안을 fixed 뼈대 / fill 자리로) ──────────────────
+class _Region(BaseModel):
+    label: str = Field(default="", description="이 영역의 짧은 이름 (원문 소제목/표 이름 기반)")
+    kind: str = Field(default="value", description="value | fixed_struct | table_records | text_list")
+    repeatable: bool = Field(default=False, description="항목 개수가 열려 있어 더 늘 수 있으면 true, 고정이면 false")
+    fixed: list[str] = Field(default_factory=list, description="채우지 않는 고정 뼈대 이름들(소제목/헤더/행라벨)")
+    guide: str = Field(default="", description="이 영역에 무엇을 채우는지 한 줄")
+
+
+class _SegRegions(BaseModel):
+    regions: list[_Region] = Field(default_factory=list)
+
+
+class _DetectResult(BaseModel):
+    items: list[_SegRegions] = Field(default_factory=list)
+
+
+# 세그먼트의 원문 요소를 '온전히'(자르지 않고) 렌더 → LLM이 개요를 베끼는 게 아니라 실제 내용으로 판단.
+def _seg_full(seg: dict, by_id: dict) -> str:
+    lines: list[str] = []
+    for e in seg["element_ids"]:
+        el = by_id.get(e)
+        if not el:
+            continue
+        if el["kind"] == "table":
+            rows, cols, cells = el["rows"], el["cols"], el["cells"]
+            lines.append(f"  표 {rows}x{cols}:")
+            for r in range(rows):
+                parts = []
+                for c in range(cols):
+                    cell = cells[r * cols + c]
+                    if cell.get("merged_skip"):
+                        continue  # 가로 병합 중복 슬롯은 개요에서 숨김
+                    parts.append((cell.get("text") or "").strip().replace("\n", " ") or "∅")
+                lines.append(f"    | {' | '.join(parts)} |")
+        else:
+            t = (el.get("text") or "").strip().replace("\n", " ")
+            lines.append(f"  · {t}" if t else "  · (빈 줄)")
+    return "\n".join(lines)
+
+
+# 입력 개요의 설명용 표기를 그대로 베낀 fixed 아티팩트만 걸러내는 백스톱. (뼈대 이름 자체는 원문 보존)
+_COPY_ARTIFACT = ("표 ", "· ", "∅", "(빈")
+
+
+def _clean_fixed(fixed: list[str]) -> list[str]:
+    return [t for f in (fixed or []) if (t := (f or "").strip()) and not t.startswith(_COPY_ARTIFACT)]
+
+
+async def detect_regions(structure: dict, segments: list[dict]) -> list[dict]:
+    """각 segment를 채울 영역(regions)으로 분해해 붙인다.
+
+    LLM이 요소 안을 fixed(뼈대)/fill(채울 자리)로 나누고 kind·repeatable을 판단.
+    표는 헤더·방향을 구조에서 보강한다(LLM 추측보다 정확). repeatable은 하드코딩하지 않고 LLM 판단을 존중.
+    """
+    by_id = {el["id"]: el for el in structure["elements"]}
+    outline = "\n\n".join(f"[{i}] 세그먼트: {s['name']}\n{_seg_full(s, by_id)}"
+                          for i, s in enumerate(segments))
+    try:
+        llm = get_llm().with_structured_output(_DetectResult)
+        result: _DetectResult = await llm.ainvoke(
+            [{"role": "system", "content": DETECT_SYSTEM_PROMPT}, {"role": "user", "content": outline}]
+        )
+        items = result.items
+    except Exception:  # noqa: BLE001 — 감지 실패해도 채우기는 가능
+        items = []
+
+    for i, s in enumerate(segments):
+        sr = items[i] if i < len(items) else None
+        regions: list[dict] = []
+        for r in (sr.regions if sr else []):
+            regions.append({
+                "label": (r.label or "").strip(),
+                "kind": r.kind or "value",
+                "repeatable": bool(r.repeatable),
+                "fixed": _clean_fixed(r.fixed),
+                "guide": (r.guide or "").strip(),
+            })
+        # 표 세그먼트: 헤더·방향은 구조에서 확정.
+        # kv 양식 표는 한 행에 라벨→값 쌍이 여러 개일 수 있어 col0/row0만 보면 오른쪽 라벨이 빠짐
+        tbl = next((by_id[e] for e in s["element_ids"] if e in by_id and by_id[e]["kind"] == "table"), None)
+        if tbl:
+            rows, cols, cells = tbl["rows"], tbl["cols"], tbl["cells"]
+            has_fill = any(c.get("fillable") and not c.get("merged_skip") for c in cells)
+            # 1칸 네모 작성란 → 표 레코드가 아니라 문단(value)
+            if is_text_box_table(cells, rows, cols):
+                regions = [x for x in regions if x.get("kind") != "table_records"]
+                if has_fill:
+                    guide = next(
+                        ((c.get("text") or "").strip().replace("\n", " ") for c in cells if not c.get("merged_skip")),
+                        "",
+                    )
+                    rec = next((x for x in regions if x.get("kind") == "value"), None)
+                    if rec is None:
+                        rec = {
+                            "label": s["name"],
+                            "kind": "value",
+                            "repeatable": False,
+                            "fixed": [],
+                            "guide": guide or (s.get("definition") or "").strip(),
+                        }
+                        regions.insert(0, rec)
+                    else:
+                        rec["repeatable"] = False
+                        if guide and not rec.get("guide"):
+                            rec["guide"] = guide
+            elif has_fill:
+                axis = table_orientation(cells, rows, cols)
+                headers = table_fields(cells, rows, cols, axis)
+                rec = next((x for x in regions if x["kind"] == "table_records"), None)
+                if rec is None:
+                    rec = {"label": s["name"], "kind": "table_records", "repeatable": False, "fixed": [], "guide": ""}
+                    regions.insert(0, rec)
+                rec["fixed"] = headers            # 헤더/행라벨/양식 항목명은 구조가 정확
+                rec["orientation"] = axis
+                if axis == "kv":
+                    # 양식 표만 구조로 확정(행·열 복제 대상 아님). row/col의 repeatable은 등록 시 LLM 판단 유지.
+                    rec["repeatable"] = False
+            else:
+                # 채울 칸 없는 표(작성요령·첨부목록 등) → table_records 강제 생성하지 않음
+                regions = [x for x in regions if x.get("kind") != "table_records"]
+        # 불릿/번호 목록 틀(list_item): 표의 예시 행처럼 반복 가능 — 구조로 text_list 확정
+        list_els = [
+            by_id[e] for e in s["element_ids"]
+            if e in by_id and by_id[e].get("fill_mode") == "list_item"
+        ]
+        if list_els:
+            rec = next((x for x in regions if x.get("kind") == "text_list"), None)
+            if rec is None:
+                rec = {
+                    "label": s["name"],
+                    "kind": "text_list",
+                    "repeatable": True,
+                    "fixed": [],
+                    "guide": (s.get("definition") or "").strip(),
+                }
+                regions.append(rec)
+            rec["kind"] = "text_list"
+            rec["repeatable"] = True
+            markers = sorted({(e.get("label") or "•") for e in list_els})
+            if markers:
+                rec["fixed"] = markers
+        s["regions"] = regions
     return segments

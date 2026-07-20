@@ -19,15 +19,24 @@ from app.agents.workflow.researcher import researcher_node
 from app.agents.workflow.responder import responder_node
 from app.agents.workflow.slot_filler import slot_filler_node
 from app.agents.workflow.writer import writer_node
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _fan_out_slots(state: GraphState):
-    """fill_dispatch 이후: 템플릿 slot마다 slot_filler를 Send로 병렬 실행."""
+    """fill_dispatch 이후: 템플릿 slot마다 slot_filler를 Send로 병렬 실행.
+
+    needs_fill=False(제목·라벨 등)인 slot도 Send는 하되, slot_filler가 LLM 없이 즉시 스킵한다.
+    → filled_slots의 idx가 템플릿 slot 순서와 맞게 유지된다.
+    """
     template = state.get("template") or {}
     slots = template.get("slots", [])
     documents = state.get("documents") or []
     if not slots:
         return routes.FILL_AGGREGATOR  # 채울 항목 없음 → 바로 집계(안내)
+    n_fill = sum(1 for s in slots if s.get("needs_fill", True))
+    logger.info("fill fan-out: %d slots (%d to fill, %d skip)", len(slots), n_fill, len(slots) - n_fill)
     return [
         Send(routes.SLOT_FILLER, {"slot": s, "idx": i, "documents": documents})
         for i, s in enumerate(slots)

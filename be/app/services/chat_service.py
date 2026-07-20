@@ -41,14 +41,9 @@ def _collect_sources(hits: list[dict], evidence: list[dict] | None = None) -> li
         if quotes:
             g["texts"] = quotes
 
-    result = list(groups.values())
-    # 근거 문장이 하나라도 잡혔으면 → 실제 근거가 된 페이지만 노출 (검색됐지만 안 쓰인 페이지 숨김).
-    # 근거가 아예 없으면(추출 실패 등) 검색 결과 전체를 폴백으로 보여준다.
-    if ev_by_key:
-        cited = [g for g in result if (g["doc"], g["location"]) in ev_by_key]
-        if cited:
-            return cited
-    return result
+    # 근거는 '실제 인용한 페이지(evidence)'만 노출한다 — 채우기 성공/실패, DocQA 모두 동일 규칙.
+    # 인용 문장이 없으면(못 찾음/추출 실패) 근거를 표시하지 않는다. (검색만 된 청크는 '근거'가 아님)
+    return [g for g in groups.values() if (g["doc"], g["location"]) in ev_by_key]
 
 # 그래프는 1회만 컴파일 (checkpointer 싱글톤 주입). 최초 요청 시 빌드.
 _graph = None
@@ -129,4 +124,24 @@ class ChatService:
         # DocQA가 검색한 근거 청크 + writer가 뽑은 근거 문장 → 프론트 하이라이트용 구조화 데이터
         artifacts = values.get("artifacts", {})
         sources = _collect_sources(artifacts.get("retrieved", []), artifacts.get("evidence", []))
-        yield {"type": "done", "reply": reply, "intent": intent, "thread_id": thread_id, "sources": sources}
+        # TemplateFill: 채운 항목들 → 프론트 카드용 구조화 데이터.
+        # ★ 이번 턴 intent가 TemplateFill일 때만 담는다. (filled_slots는 상태에 남아있어서,
+        #    다음 일반채팅/DocQA 턴에서 그대로 실으면 직전 채우기 결과가 또 렌더되는 버그가 남)
+        filled = []
+        if intent == "TemplateFill":
+            filled_slots = sorted(values.get("filled_slots") or [], key=lambda s: s.get("idx", 0))
+            filled = [
+                {
+                    "idx": s.get("idx", 0),
+                    "name": s.get("name"),
+                    "content": s.get("content"),
+                    "skipped": bool(s.get("skipped")),
+                    # 근거 문장(evidence)이 있으면 문장 단위 + 실제 쓰인 페이지만 하이라이트
+                    "sources": _collect_sources(s.get("sources") or [], s.get("evidence") or []),
+                }
+                for s in filled_slots
+            ]
+        yield {
+            "type": "done", "reply": reply, "intent": intent, "thread_id": thread_id,
+            "sources": sources, "filled": filled,
+        }

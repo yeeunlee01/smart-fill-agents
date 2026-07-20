@@ -3,7 +3,7 @@ name: smart-fill-agents
 services:
   # ===== 우리 앱 =====
   # be가 API(/api/v1/*)와 프론트엔드(바닐라 HTML/JS, be/app/static)를 함께 서빙한다.
-  # → UI 접속 주소: http://localhost:8000
+  # → UI 접속 주소: http://localhost:8001 (sunshot 8000과 분리)
   be:
     container_name: be
     build: ./be
@@ -14,7 +14,7 @@ services:
       - ./data:/data   # 디버그용: 변환된 PDF 저장 위치
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       milvus:
         condition: service_healthy

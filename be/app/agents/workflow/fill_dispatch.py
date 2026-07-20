@@ -12,6 +12,10 @@ logger = get_logger(__name__)
 def fill_dispatch_node(state: GraphState) -> dict:
     template = state.get("template") or {}
     slots = template.get("slots", [])
-    logger.info("fill_dispatch: '%s' slot %d개 채우기 시작", template.get("name", "?"), len(slots))
+    n_fill = sum(1 for s in slots if s.get("needs_fill", True))
+    logger.info(
+        "fill_dispatch: '%s' slot %d개 (채움 %d · 스킵 %d)",
+        template.get("name", "?"), len(slots), n_fill, len(slots) - n_fill,
+    )
     # 이전 채우기 결과 초기화 (같은 thread에서 재채우기 시 누적 방지)
     return {"filled_slots": RESET}

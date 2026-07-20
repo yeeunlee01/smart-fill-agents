@@ -55,15 +55,40 @@ def _parse_pptx(data: bytes) -> list[tuple[str, str]]:
 
 
 def _parse_docx(data: bytes) -> str:
+    """DOCX → 평문. 본문 읽기 순서(문단·표 교차)를 유지한다.
+
+    NOTE: `doc.paragraphs` 전부 + `doc.tables` 전부 순으로 붙이면
+    '실적 N' 제목과 바로 아래 발주처 표가 떨어져, RAG가 3번째 실적 메타를
+    제목과 연결하지 못하는 문제가 난다.
+    """
     from docx import Document
+    from docx.oxml.ns import qn
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
 
     doc = Document(io.BytesIO(data))
-    parts = [p.text for p in doc.paragraphs if p.text.strip()]
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [c.text.strip() for c in row.cells if c.text.strip()]
-            if cells:
-                parts.append(" | ".join(cells))
+    parts: list[str] = []
+    for child in doc.element.body.iterchildren():
+        if child.tag == qn("w:p"):
+            text = Paragraph(child, doc).text
+            if text.strip():
+                parts.append(text)
+        elif child.tag == qn("w:tbl"):
+            table = Table(child, doc)
+            for row in table.rows:
+                # 병합 셀 중복 텍스트는 한 번만
+                cells: list[str] = []
+                seen_tc: set[int] = set()
+                for cell in row.cells:
+                    tc_id = id(cell._tc)
+                    if tc_id in seen_tc:
+                        continue
+                    seen_tc.add(tc_id)
+                    t = cell.text.strip()
+                    if t:
+                        cells.append(t)
+                if cells:
+                    parts.append(" | ".join(cells))
     return "\n".join(parts)
 
 

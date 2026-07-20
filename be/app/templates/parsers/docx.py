@@ -14,7 +14,7 @@ from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from app.templates.blanks import classify_blank
+from app.templates.blanks import classify_blank, classify_cell_blank
 
 
 def _iter_body_blocks(doc):
@@ -66,18 +66,29 @@ def parse_structure(data: bytes) -> dict:
             t_idx += 1
             cells: list[dict] = []
             for r, row in enumerate(block.rows):
+                # python-docx는 가로 병합 셀을 grid 폭만큼 같은 _tc로 반복 반환한다.
+                # 중복 슬롯은 fillable로 세지 않아 방향 감지·주입이 왜곡되지 않게 한다.
+                seen_tc: set[int] = set()
                 for c, cell in enumerate(row.cells):
                     ctext = cell.text
                     empty = not ctext.strip()
+                    tc_id = id(cell._tc)
+                    merged_skip = tc_id in seen_tc
+                    seen_tc.add(tc_id)
+                    if merged_skip:
+                        fillable, fill_mode, label = False, "", ""
+                    else:
+                        fillable, fill_mode, label = classify_cell_blank(ctext)
                     # 셀은 표(top-level) 묶음의 일부 — 별도 id 없이 anchor만 (채우기 주입용)
                     cells.append(
                         {
                             "kind": "cell",
                             "text": ctext,
                             "empty": empty,
-                            "fillable": empty,
-                            "fill_mode": "replace",
-                            "label": "",
+                            "fillable": fillable,
+                            "fill_mode": fill_mode or ("replace" if fillable else ""),
+                            "label": label,
+                            "merged_skip": merged_skip,
                             "anchor": {"type": "cell", "t": t_idx, "r": r, "c": c},
                         }
                     )

@@ -244,19 +244,76 @@ body { height: 100vh; }
 .source-item .src-loc { color: var(--muted); }
 .source-item .src-score { color: var(--muted); }
 
-/* 근거 원문 PDF 모달 */
-.pdf-modal { position: fixed; inset: 0; z-index: 1000; display: flex; }
+/* 채워진 문서 뷰 (기본) + 항목 카드 토글 + 다운로드 */
+.fill-doc-bar { display: flex; align-items: center; gap: 8px; margin: 8px 0 6px; flex-wrap: wrap; }
+.fill-doc-title { font-weight: 700; }
+.fill-doc-bar button { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 5px 12px; font-size: 13px; cursor: pointer; color: var(--text); }
+.fill-doc-bar button:hover { background: var(--bg); }
+.fill-doc-bar button:disabled { opacity: .5; cursor: default; }
+.fill-doc-download { margin-left: auto; }
+/* 채워진 문서 뷰가 든 메시지 폭 (좌우 문서 나란히) */
+.msg:has(.fill-doc-bar) { max-width: 1370px; width: 100%; }
+/* 좌우 분할: 원본 | 채운 문서, 각각 독립 스크롤 */
+.fill-doc-split { display: flex; gap: 10px; }
+.fill-doc-pane { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.fill-doc-pane-label { font-size: 12px; color: var(--muted); font-weight: 600; margin: 0 0 4px 2px; }
+.fill-doc-pane-body { background: #f0f0f3; border: 1px solid var(--border); border-radius: 10px; padding: 8px; height: 72vh; overflow: auto; }
+
+/* 채우기 결과 — 항목별 카드 (마크다운 렌더 + 편집 토글 + 근거 토글) */
+.fill-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--panel); }
+.fill-card.not-found { background: #fff7ed; border-color: #fed7aa; }
+.fill-card .fill-head { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 6px; }
+.fill-card .fill-title { min-width: 0; }
+.fill-card.not-found .fill-head { color: #b45309; }
+.fill-card .fill-edit {
+  margin-left: auto; flex-shrink: 0; border: 1px solid var(--border); background: var(--panel);
+  border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--muted);
+}
+.fill-card .fill-edit:hover { background: var(--bg); color: var(--text); }
+.fill-card .fill-body { line-height: 1.55; }
+.fill-card.not-found .fill-body { color: var(--muted); }
+/* 렌더된 마크다운 — 빈 줄로 나뉜 문단이 눈에 띄게 띄어지도록 */
+.fill-card .fill-body p { margin: 0 0 12px; }
+.fill-card .fill-body p:last-child { margin-bottom: 0; }
+.fill-card .fill-body ul { margin: 4px 0; padding-left: 20px; }
+.fill-card .fill-body h1, .fill-card .fill-body h2, .fill-card .fill-body h3, .fill-card .fill-body h4 { margin: 6px 0 3px; font-size: 14px; }
+.fill-card .fill-body table { border-collapse: collapse; margin: 6px 0; width: auto; max-width: 100%; }
+.fill-card .fill-body th, .fill-card .fill-body td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; font-size: 13px; vertical-align: top; }
+.fill-card .fill-body th { background: var(--bg); font-weight: 600; }
+/* 양식(kv) 표: 원본처럼 라벨|값(|라벨|값) 격자 */
+.fill-card .fill-body table.kv-form { width: 100%; table-layout: fixed; }
+.fill-card .fill-body table.kv-form td.kv-label {
+  background: var(--bg); font-weight: 600; width: 22%; white-space: nowrap;
+}
+.fill-card .fill-body table.kv-form td.kv-value { width: 28%; word-break: break-word; }
+.fill-card .fill-body table.kv-extra { margin-top: 8px; opacity: 0.9; }
+/* 편집 영역 */
+.fill-card .fill-edit-area {
+  width: 100%; box-sizing: border-box; min-height: 80px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+  font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical;
+}
+.fill-card .sources { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px; }
+.fill-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.fill-copy { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; color: var(--text); }
+.fill-copy:hover { background: var(--bg); }
+
+/* 근거 원문 PDF 창 — 배경 안 어둡게(채팅 동시에 보임) + 헤더 잡고 드래그 이동 */
+.pdf-modal { position: fixed; inset: 0; z-index: 1000; pointer-events: none; } /* 뒤 채팅 클릭 가능 */
 .pdf-modal[hidden] { display: none; }
-.pdf-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.pdf-modal-backdrop { display: none; }
 .pdf-modal-panel {
-  position: relative; margin: auto; z-index: 1;
+  position: fixed; top: 56px; left: 50%; transform: translateX(-50%); /* 초기 위치(드래그하면 JS가 덮어씀) */
   width: min(900px, 92vw); height: min(88vh, 900px);
-  background: #fff; border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  min-width: 360px; min-height: 260px; max-width: 96vw; max-height: 94vh;
+  pointer-events: auto; resize: both; /* 우하단 모서리로 크기 조절 */
+  background: #fff; border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .pdf-modal-head {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; border-bottom: 1px solid var(--border);
+  cursor: move; user-select: none;
 }
 .pdf-modal-title { font-size: 13px; color: var(--muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pdf-modal-close { margin-left: auto; border: none; background: none; font-size: 18px; cursor: pointer; color: var(--muted); padding: 2px 6px; }
@@ -477,6 +534,19 @@ body { height: 100vh; }
 .slot-card-head { display: flex; align-items: center; gap: 8px; }
 .slot-card input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; width: 100%; }
 .slot-card .sname { font-weight: 600; }
+.slot-card.slot-skip { opacity: 0.72; background: #f8fafc; }
+.slot-card .slot-fill-toggle {
+  flex-shrink: 0; font-size: 11px; font-weight: 600; border-radius: 999px;
+  padding: 3px 10px; border: 1px solid transparent; cursor: pointer;
+  font-family: inherit; line-height: 1.3; white-space: nowrap;
+}
+.slot-card .slot-fill-toggle.is-on {
+  color: #1d4ed8; background: #dbeafe; border-color: #93c5fd;
+}
+.slot-card .slot-fill-toggle.is-off {
+  color: #64748b; background: #e2e8f0; border-color: #cbd5e1;
+}
+.slot-card .slot-fill-toggle:hover { filter: brightness(0.97); }
 .slot-card .del { cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
 .slot-fields { display: flex; flex-wrap: wrap; gap: 6px; }
 .field-chip { background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
@@ -491,6 +561,28 @@ body { height: 100vh; }
 .slot-card .seg-preview > summary::-webkit-details-marker { display: none; }
 .slot-card .seg-preview > summary::before { content: "▸"; font-size: 19px; line-height: 1; }
 .slot-card .seg-preview[open] > summary::before { content: "▾"; }
+
+/* 분해(LLM 판단: 채울 영역 fixed/fill) 토글 */
+.slot-card .seg-regions { border-top: 1px dashed var(--border); padding-top: 6px; margin-top: 4px; }
+.slot-card .seg-regions > summary { cursor: pointer; font-size: 12px; color: var(--muted); list-style: none; user-select: none; }
+.slot-card .seg-regions > summary::-webkit-details-marker { display: none; }
+.slot-card .seg-regions > summary::before { content: "▸ "; }
+.slot-card .seg-regions[open] > summary::before { content: "▾ "; }
+.seg-regions-json { margin: 6px 0 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-x: auto; color: var(--text); }
+.seg-regions-body { margin: 6px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.rg-empty { font-size: 11px; color: var(--muted); padding: 4px 2px; font-style: italic; }
+.rg-item { padding: 7px 9px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+.rg-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rg-kind { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: var(--border); color: var(--text); white-space: nowrap; }
+.rg-kind.rg-table_records { background: #d6e4ff; color: #1e3a8a; }
+.rg-kind.rg-fixed_struct { background: #e0e7ff; color: #3730a3; }
+.rg-kind.rg-text_list { background: #dcfce7; color: #166534; }
+.rg-kind.rg-value { background: #f1f5f9; color: #475569; }
+.rg-label { font-size: 12px; font-weight: 600; color: var(--text); }
+.rg-rep { font-size: 10px; font-weight: 700; color: #9a3412; background: #ffedd5; padding: 1px 5px; border-radius: 4px; }
+.rg-guide { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+.rg-fixed { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.rg-fixed-lbl { font-weight: 700; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .seg-loading { font-size: 12px; color: var(--muted); padding: 8px 2px; }
 
 /* 고충실: docx-preview 클론을 카드 폭에 맞춰 축소해 담는 상자 */

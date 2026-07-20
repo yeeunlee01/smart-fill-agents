@@ -28,7 +28,10 @@ def render_outline(structure: dict) -> str:
             lines.append(f"[{el['id']}] 표 ({el['rows']}x{el['cols']})")
             for r in range(el["rows"]):
                 row = el["cells"][r * el["cols"]:(r + 1) * el["cols"]]
-                cells = " | ".join((c["text"].strip() or "∅") for c in row)
+                # 가로 병합으로 반복된 슬롯은 개요에서 숨김 (실제 논리 셀만)
+                cells = " | ".join(
+                    (c["text"].strip() or "∅") for c in row if not c.get("merged_skip")
+                )
                 lines.append(f"    | {cells} |")
         else:
             kind_kr = "제목" if el["kind"] == "heading" else "문단"
