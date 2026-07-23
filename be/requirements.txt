@@ -25,3 +25,4 @@ pypdf
 # ===== 기타 =====
 psycopg[binary]
 httpx
+minio

@@ -1,5 +1,8 @@
 """템플릿 관련 엔드포인트.
 
+- GET ''   : 저장된 템플릿 목록 (Postgres + MinIO)
+- PUT ''   : 템플릿 저장/수정 (이름 기준 upsert)
+- DELETE '': 템플릿 삭제 (?name=)
 - /extract : 업로드 파일에서 평문 텍스트만 추출 (편집기 '템플릿 원문' 채우기용)
 - /split   : 평문 원문 → slot 분할 (텍스트 방식, element_ids 없음)
 - /detect  : 파일 → 공통 구조 파싱 → 논리 블록(slot) 분할 (서식 보존, 채우기 단위)
@@ -16,6 +19,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.agents.prompts.templates import SPLIT_SYSTEM_PROMPT
+from app.db import templates as templates_db
 from app.llm.client import get_llm
 from app.rag.parse import parse_file
 from app.templates.inject import fill_docx
@@ -43,6 +47,43 @@ class _SplitResult(BaseModel):
 
 class SplitRequest(BaseModel):
     text: str
+
+
+class TemplateSaveRequest(BaseModel):
+    """프론트 localStorage와 동일한 형태 (마이그레이션 호환)."""
+
+    name: str
+    kind: str = "text"
+    file_name: str = ""
+    file_b64: str = ""
+    text: str = ""
+    structure: dict | None = None
+    slots: list = Field(default_factory=list)
+
+
+@router.get("")
+async def list_templates() -> list[dict]:
+    """저장된 템플릿 목록 (원본 파일 base64 포함)."""
+    return await templates_db.list_templates()
+
+
+@router.put("")
+async def save_template(req: TemplateSaveRequest) -> dict:
+    """템플릿 저장/수정 (이름 기준 upsert). 파일은 MinIO, 메타는 Postgres."""
+    try:
+        await templates_db.upsert_template(req.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "name": req.name}
+
+
+@router.delete("")
+async def remove_template(name: str) -> dict:
+    """템플릿 삭제 (?name=...)."""
+    deleted = await templates_db.delete_template(name)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"템플릿 '{name}'이(가) 없습니다.")
+    return {"ok": True}
 
 
 @router.post("/extract")

@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     postgres_password: str = "app"
     postgres_db: str = "agents"
 
+    # MinIO (템플릿 원본 파일 저장소 — Milvus 스택의 minio 재사용)
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket: str = "templates"
+
     @property
     def is_personal(self) -> bool:
         """MODE=personal 이면 개인 OpenAI 계정 사용."""

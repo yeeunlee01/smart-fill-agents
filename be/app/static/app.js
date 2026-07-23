@@ -949,38 +949,77 @@ $$(".nav-item").forEach((btn) => {
 });
 
 /* ======================================================================
- *  템플릿 저장소 (localStorage)
+ *  템플릿 저장소 (백엔드 API — Postgres 메타 + MinIO 원본 파일)
+ *  서버가 영구 저장을 담당하고, 프론트는 메모리 캐시(_tplCache)로 동기 접근을 유지.
+ *  과거 localStorage(sfa_templates) 데이터는 최초 접속 시 1회 서버로 자동 이전.
  * ==================================================================== */
-const TPL_KEY = "sfa_templates";
+const TPL_KEY = "sfa_templates"; // 구버전 localStorage 마이그레이션용
+const TPL_API = "/api/v1/templates";
+let _tplCache = [];
 
-function loadTemplates() {
+function loadTemplates() { return _tplCache; }
+function getTemplate(name) { return _tplCache.find((t) => t.name === name) || null; }
+
+async function _apiSaveTemplate(tpl) {
+  const res = await fetch(TPL_API, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: tpl.name,
+      kind: tpl.kind || "text",
+      file_name: tpl.file_name || "",
+      file_b64: tpl.file_b64 || "",
+      text: tpl.text || tpl.raw_text || "",
+      structure: tpl.structure || null,
+      slots: tpl.slots || [],
+    }),
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { detail = (await res.json()).detail || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+}
+
+// 캐시를 즉시 갱신해 UI는 바로 반영하고, 서버 저장은 백그라운드로 (실패 시 알림)
+function upsertTemplate(tpl) {
+  const i = _tplCache.findIndex((t) => t.name === tpl.name);
+  if (i >= 0) _tplCache[i] = tpl; else _tplCache.push(tpl);
+  _apiSaveTemplate(tpl).catch((e) => alert(`템플릿 서버 저장 실패: ${e.message || e}`));
+}
+
+function deleteTemplate(name) {
+  _tplCache = _tplCache.filter((t) => t.name !== name);
+  fetch(`${TPL_API}?name=${encodeURIComponent(name)}`, { method: "DELETE" })
+    .then((res) => { if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`); })
+    .catch((e) => alert(`템플릿 서버 삭제 실패: ${e.message || e}`));
+}
+
+async function initTemplates() {
+  try {
+    const res = await fetch(TPL_API);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    _tplCache = await res.json();
+  } catch (e) {
+    console.error("템플릿 목록 로드 실패:", e);
+    return;
+  }
+  // 구버전 localStorage 데이터 1회 이전 (서버에 없는 이름만) → 완료 후 제거
   try {
     const raw = localStorage.getItem(TPL_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (_) {}
-  const seed = [
-    {
-      name: "사업계획서 (샘플)",
-      raw_text: "사업 개요\n시장 분석\n수익 모델\n팀 구성",
-      slots: [
-        { name: "사업 개요", definition: "사업의 목적과 배경을 2~3문장으로 요약" },
-        { name: "시장 분석", definition: "타깃 시장 규모와 경쟁 현황" },
-        { name: "수익 모델", definition: "주요 매출원과 과금 방식" },
-        { name: "팀 구성", definition: "핵심 멤버와 역할" },
-      ],
-    },
-  ];
-  saveTemplates(seed);
-  return seed;
-}
-function saveTemplates(list) { localStorage.setItem(TPL_KEY, JSON.stringify(list)); }
-function getTemplate(name) { return loadTemplates().find((t) => t.name === name) || null; }
-function deleteTemplate(name) { saveTemplates(loadTemplates().filter((t) => t.name !== name)); }
-function upsertTemplate(tpl) {
-  const list = loadTemplates();
-  const i = list.findIndex((t) => t.name === tpl.name);
-  if (i >= 0) list[i] = tpl; else list.push(tpl);
-  saveTemplates(list);
+    if (raw) {
+      const old = JSON.parse(raw);
+      const names = new Set(_tplCache.map((t) => t.name));
+      for (const t of Array.isArray(old) ? old : []) {
+        if (!t || !t.name || names.has(t.name)) continue;
+        await _apiSaveTemplate(t);
+        _tplCache.push(t);
+      }
+      localStorage.removeItem(TPL_KEY);
+    }
+  } catch (e) {
+    console.error("localStorage 템플릿 이전 실패 (다음 접속 시 재시도):", e);
+  }
 }
 
 /* ===== 채팅 사이드바: 템플릿 선택 ===== */
@@ -1865,3 +1904,8 @@ document.addEventListener("keydown", (e) => {
 /* ===== 초기화 ===== */
 refreshTemplateSelect();
 renderAttachments(); // greeting 포함
+// 서버에서 템플릿 목록 로드 (+구버전 localStorage 1회 이전) 후 화면 갱신
+initTemplates().then(() => {
+  refreshTemplateSelect();
+  if (!$("#tpl-library").hidden) renderLibrary();
+});

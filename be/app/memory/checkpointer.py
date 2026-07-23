@@ -37,6 +37,13 @@ def get_checkpointer() -> AsyncPostgresSaver:
     return _checkpointer
 
 
+def get_pool() -> AsyncConnectionPool:
+    """공용 Postgres 커넥션 풀 (templates 등 다른 저장소도 재사용)."""
+    if _pool is None:
+        raise RuntimeError("Postgres 풀이 초기화되지 않았습니다. 앱 시작 시 init_checkpointer()를 호출하세요.")
+    return _pool
+
+
 async def close_checkpointer() -> None:
     """앱 종료 시 풀 정리."""
     global _pool, _checkpointer
